@@ -121,3 +121,30 @@ def test_cognify_posts_camelcase_background_json():
 
     assert seen["url"] == "http://test/api/v1/cognify"
     assert seen["payload"] == {"datasets": ["main_dataset"], "runInBackground": True}
+
+
+def test_delete_dataset_resolves_name_to_id():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.method == "GET" and request.url.path == "/api/v1/datasets":
+            return httpx.Response(200, json=[
+                {"id": "ds-1", "name": "other"},
+                {"id": "ds-2", "name": "main_dataset"},
+            ])
+        if request.method == "DELETE" and request.url.path == "/api/v1/datasets/ds-2":
+            return httpx.Response(200, json={"deleted": True})
+        return httpx.Response(404)
+
+    deleted = _client(handler).delete_dataset_by_name("main_dataset")
+    assert deleted is True
+    assert ("GET", "/api/v1/datasets") in calls
+    assert ("DELETE", "/api/v1/datasets/ds-2") in calls
+
+
+def test_delete_dataset_missing_name_returns_false():
+    def handler(request):
+        return httpx.Response(200, json=[{"id": "x", "name": "nope"}])
+
+    assert _client(handler).delete_dataset_by_name("absent") is False

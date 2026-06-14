@@ -115,3 +115,21 @@ class CogneeClient:
         payload = {"datasets": [self._config.dataset], "runInBackground": True}
         resp = self._http.post("/api/v1/cognify", json=payload)
         resp.raise_for_status()
+
+    def list_datasets(self) -> List[Dict[str, Any]]:
+        resp = self._http.get("/api/v1/datasets")
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+    def delete_dataset_by_name(self, name: str) -> bool:
+        dataset_id = None
+        for ds in self.list_datasets():
+            if isinstance(ds, dict) and ds.get("name") == name:
+                dataset_id = ds.get("id")
+                break
+        if not dataset_id:
+            return False
+        resp = self._http.delete(f"/api/v1/datasets/{dataset_id}")
+        resp.raise_for_status()
+        return True
