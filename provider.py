@@ -195,3 +195,52 @@ class CogneeMemoryProvider(MemoryProvider):
             self._cognify()
 
         self._spawn(_finalize)
+
+    @staticmethod
+    def _format_recall(results: List[Any]) -> str:
+        lines = []
+        for item in results[:10]:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content") or item.get("answer") or json.dumps(item)
+            else:
+                text = str(item)
+            if text:
+                lines.append(f"- {text}")
+        return "\n".join(lines)
+
+    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        query = (query or "").strip()
+        if not query or not self._initialized:
+            return
+        sid = session_id or self._session_id
+
+        def _run():
+            try:
+                results = self._client.search(
+                    query,
+                    search_type=self._config.prefetch_search_type,
+                    top_k=5,
+                    only_context=True,
+                )
+                formatted = self._format_recall(results)
+                if formatted:
+                    with self._prefetch_lock:
+                        self._prefetch_cache[sid] = formatted
+            except Exception as exc:
+                logger.debug("cognee prefetch failed: %s", exc)
+
+        self._spawn(_run)
+
+    def prefetch(self, query: str, *, session_id: str = "") -> str:
+        sid = session_id or self._session_id
+        with self._prefetch_lock:
+            result = self._prefetch_cache.pop(sid, "")
+        if not result:
+            return ""
+        return f"<cognee-memory>\n{result}\n</cognee-memory>"
+
+    def on_session_switch(self, new_session_id, *, parent_session_id="", reset=False, rewound=False, **kwargs):
+        self._session_id = new_session_id or ""
+        if reset or rewound:
+            with self._prefetch_lock:
+                self._prefetch_cache.clear()

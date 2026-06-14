@@ -132,3 +132,32 @@ def test_session_end_skipped_for_non_primary():
     provider.on_session_end([{"role": "user", "content": "x"}])
     _join(provider)
     assert fake.cognified == 0
+
+
+def test_queue_prefetch_populates_cache_consumed_by_prefetch():
+    provider, fake = make_provider()
+    fake.search_return = [{"text": "user is a tech lead"}]
+    provider.queue_prefetch("background", session_id="sess-1")
+    _join(provider)
+    out = provider.prefetch("background", session_id="sess-1")
+    assert "tech lead" in out
+    assert "<cognee-memory>" in out
+    # prefetch uses the configured fast search type
+    assert fake.searched and fake.searched[0][1] == "CHUNKS"
+    # cache is consumed (one-shot)
+    assert provider.prefetch("background", session_id="sess-1") == ""
+
+
+def test_prefetch_returns_empty_when_nothing_cached():
+    provider, _ = make_provider()
+    assert provider.prefetch("q", session_id="sess-1") == ""
+
+
+def test_session_switch_resets_session_and_cache_on_reset():
+    provider, fake = make_provider()
+    fake.search_return = [{"text": "ctx"}]
+    provider.queue_prefetch("q", session_id="sess-1")
+    _join(provider)
+    provider.on_session_switch("sess-2", reset=True)
+    assert provider._session_id == "sess-2"
+    assert provider.prefetch("q", session_id="sess-1") == ""  # cache cleared
