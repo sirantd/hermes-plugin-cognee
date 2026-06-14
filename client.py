@@ -90,3 +90,23 @@ class CogneeClient:
         }
         resp = self._http.post("/api/v1/add", data=data, files=files)
         resp.raise_for_status()
+
+    def search(
+        self,
+        query: str,
+        *,
+        search_type: str,
+        top_k: int = 10,
+        only_context: bool = False,
+    ) -> List[Any]:
+        payload = {
+            "searchType": search_type,
+            "datasets": [self._config.dataset],
+            "query": query,
+            "topK": top_k,
+            "onlyContext": only_context,
+        }
+        resp = self._http.post("/api/v1/search", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else [data]

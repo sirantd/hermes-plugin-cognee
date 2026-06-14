@@ -74,3 +74,36 @@ def test_add_empty_list_is_noop():
         raise AssertionError("should not call server for empty add")
 
     _client(handler).add([])  # no exception, no request
+
+
+import json
+
+
+def test_search_posts_camelcase_json_and_returns_list():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["payload"] = json.loads(request.content)
+        return httpx.Response(200, json=[{"text": "a"}, {"text": "b"}])
+
+    client = _client(handler)
+    out = client.search("who am i", search_type="GRAPH_COMPLETION", top_k=3, only_context=True)
+
+    assert seen["url"] == "http://test/api/v1/search"
+    assert seen["payload"] == {
+        "searchType": "GRAPH_COMPLETION",
+        "datasets": ["main_dataset"],
+        "query": "who am i",
+        "topK": 3,
+        "onlyContext": True,
+    }
+    assert out == [{"text": "a"}, {"text": "b"}]
+
+
+def test_search_wraps_non_list_response_in_list():
+    def handler(request):
+        return httpx.Response(200, json={"answer": "42"})
+
+    out = _client(handler).search("q", search_type="CHUNKS")
+    assert out == [{"answer": "42"}]
