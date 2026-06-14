@@ -4,15 +4,25 @@ from __future__ import annotations
 
 
 def register_cli(subparser) -> None:
-    sub = subparser.add_parser("cognee", help="cognee memory provider utilities")
-    actions = sub.add_subparsers(dest="cognee_action")
+    """Build the ``hermes cognee`` subcommand tree.
 
-    status = actions.add_parser("status", help="Show cognee server reachability + config")
-    status.set_defaults(func=_cmd_status)
-
-    recall = actions.add_parser("recall", help="Run a one-off cognee recall query")
+    ``subparser`` is the argparse parser for ``hermes cognee`` itself.
+    """
+    subs = subparser.add_subparsers(dest="cognee_command")
+    subs.add_parser("status", help="Show cognee server reachability + config")
+    recall = subs.add_parser("recall", help="Run a one-off cognee recall query")
     recall.add_argument("query")
-    recall.set_defaults(func=_cmd_recall)
+    subparser.set_defaults(func=_dispatch)
+
+
+def _dispatch(args) -> None:
+    command = getattr(args, "cognee_command", None)
+    if command == "status":
+        _cmd_status(args)
+    elif command == "recall":
+        _cmd_recall(args)
+    else:
+        print("usage: hermes cognee {status,recall}")
 
 
 def _build_client():
