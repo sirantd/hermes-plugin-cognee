@@ -244,3 +244,46 @@ class CogneeMemoryProvider(MemoryProvider):
         if reset or rewound:
             with self._prefetch_lock:
                 self._prefetch_cache.clear()
+
+    def handle_tool_call(self, tool_name, args, **kwargs) -> str:
+        try:
+            if tool_name == "cognee_remember":
+                content = str(args.get("content") or "").strip()
+                if not content:
+                    return _err("content is required")
+                self._client.add([content])
+                return json.dumps({"ok": True})
+            if tool_name == "cognee_recall":
+                query = str(args.get("query") or "").strip()
+                if not query:
+                    return _err("query is required")
+                results = self._client.search(
+                    query,
+                    search_type=str(args.get("search_type") or self._config.tool_search_type),
+                    top_k=int(args.get("top_k") or 10),
+                    only_context=False,
+                )
+                return json.dumps({"ok": True, "results": results})
+            if tool_name == "cognee_forget":
+                if args.get("confirm") is not True:
+                    return _err("cognee_forget requires confirm=true after an explicit deletion request")
+                dataset = str(args.get("dataset") or self._config.dataset)
+                deleted = self._client.delete_dataset_by_name(dataset)
+                return json.dumps({"ok": True, "deleted": deleted, "dataset": dataset})
+            return _err(f"Unknown cognee tool: {tool_name}")
+        except Exception as exc:
+            logger.warning("cognee tool %s failed: %s", tool_name, exc)
+            return _err(str(exc))
+
+    def shutdown(self) -> None:
+        try:
+            self._flush()
+        except Exception:
+            logger.debug("flush during shutdown failed", exc_info=True)
+        for thread in list(self._threads):
+            thread.join(timeout=2)
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass

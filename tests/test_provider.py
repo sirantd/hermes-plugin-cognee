@@ -161,3 +161,56 @@ def test_session_switch_resets_session_and_cache_on_reset():
     provider.on_session_switch("sess-2", reset=True)
     assert provider._session_id == "sess-2"
     assert provider.prefetch("q", session_id="sess-1") == ""  # cache cleared
+
+
+def test_tool_schemas_expose_three_tools():
+    provider, _ = make_provider()
+    names = {s["name"] for s in provider.get_tool_schemas()}
+    assert names == {"cognee_remember", "cognee_recall", "cognee_forget"}
+
+
+def test_remember_tool_adds_and_flushes_immediately():
+    provider, fake = make_provider(add_buffer_size=99)
+    out = json.loads(provider.handle_tool_call("cognee_remember", {"content": "I prefer dark mode"}))
+    assert out["ok"] is True
+    assert fake.added and any("dark mode" in r for r in fake.added[0])
+
+
+def test_recall_tool_uses_tool_search_type():
+    provider, fake = make_provider()
+    fake.search_return = [{"text": "found it"}]
+    out = json.loads(provider.handle_tool_call("cognee_recall", {"query": "prefs", "top_k": 4}))
+    assert out["ok"] is True
+    assert fake.searched[0][1] == "GRAPH_COMPLETION"
+    assert fake.searched[0][2] == 4
+
+
+def test_forget_requires_confirm():
+    provider, fake = make_provider()
+    out = json.loads(provider.handle_tool_call("cognee_forget", {"confirm": False}))
+    assert "error" in out
+    assert fake.deleted == []
+
+
+def test_forget_with_confirm_deletes_dataset():
+    provider, fake = make_provider()
+    out = json.loads(provider.handle_tool_call("cognee_forget", {"confirm": True}))
+    assert out["ok"] is True
+    assert fake.deleted == ["main_dataset"]
+
+
+def test_unknown_tool_returns_error():
+    provider, _ = make_provider()
+    out = json.loads(provider.handle_tool_call("cognee_bogus", {}))
+    assert "error" in out
+
+
+def test_remember_tool_degrades_on_client_error():
+    provider, fake = make_provider(add_buffer_size=99)
+
+    def boom(texts):
+        raise RuntimeError("server down")
+
+    fake.add = boom
+    out = json.loads(provider.handle_tool_call("cognee_remember", {"content": "x meaningful"}))
+    assert "error" in out  # error surfaced to model, no exception raised
