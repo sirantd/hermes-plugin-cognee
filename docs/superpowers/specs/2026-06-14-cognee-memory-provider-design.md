@@ -13,6 +13,28 @@ the current ad-hoc cognee integration (custom SessionEnd flush hooks + cognee-no
 buffer). cognee runs as a remote server on `truenas.local:8000`, backing the shared
 `main_dataset` knowledge graph, partitioned by `node_set`.
 
+## Prior art & upstream policy
+
+Checked `NousResearch/hermes-agent` before designing:
+
+- **In-tree memory providers are CLOSED.** `CONTRIBUTING.md` §*"Memory Providers:
+  Ship as a Standalone Plugin"*: *"We are no longer accepting new memory providers
+  into this repo… publish it as a standalone plugin repo that users install into
+  `~/.hermes/plugins/` (or via a pip entry point)."* Four cognee provider PRs were
+  closed un-merged on exactly this basis: #7418 (by cognee founder Vasilije1990),
+  #23549, #26179, #29909. This makes our out-of-tree, user-installed packaging the
+  **mandated** path, not just a preference.
+- **Issue #14368** (closed) is the canonical reference for the integration gap. Two
+  lessons: (1) embedded Lance/Kuzu recall hits `RLIMIT_NOFILE` "Too many open files"
+  on macOS; (2) providers should mirror builtin writes via `on_memory_write` for
+  durable parity.
+- **Reference implementation:** PR #26179 (`nik1t7n:cognee-external-memory-plugin`),
+  the policy-aligned out-of-tree rebuild. Same file layout we use
+  (`plugin.yaml`/`__init__.py`/`client.py`/`cli.py`/`README.md` + a discovery-path
+  test). We borrow its skeleton, ABC wiring, threading, tool schemas, config
+  plumbing, and test harness — but **not** its cognee access layer (see
+  *Divergences* below). Diff archived at `docs/reference/pr-26179.diff`.
+
 ## Packaging & deployment
 
 A **user-installed plugin** (not bundled — no push access to the upstream
@@ -92,14 +114,14 @@ turn never blocks on cognee:
 | `name` | `"cognee"` |
 | `is_available()` | `httpx` importable **and** `base_url` configured. No network call. |
 | `initialize(session_id, **kwargs)` | Build client (`base_url`, `dataset=main_dataset`, `node_set=hermes`); start worker thread. Capture `agent_context`; record platform/identity. |
-| `system_prompt_block()` | One line: cognee long-term graph memory active; `cognee_search`/`cognee_remember` tools available. |
+| `system_prompt_block()` | Short block: cognee long-term graph memory active **alongside** builtin file memory (does NOT disable builtin); `cognee_recall`/`cognee_remember`/`cognee_forget` tools available. |
 | `prefetch(query, session_id)` | Return **cached** search result for `session_id` instantly (non-blocking). |
 | `queue_prefetch(query, session_id)` | Enqueue a background search for the next turn (uses `prefetch_search_type`, default `CHUNKS`). |
 | `sync_turn(user, asst, ...)` | Append formatted turn record to write buffer (primary context only). |
 | `on_memory_write(action, target, content, metadata)` | Mirror builtin memory-tool writes into the write buffer (primary context only). |
 | `on_turn_start(turn_number, ...)` | Increment turn counter; every `cognify_every_n_turns` (default 10) enqueue a background cognify. |
 | `on_session_end(messages)` | Flush write buffer → `/add`, then trigger `/cognify` (background). |
-| `get_tool_schemas()` | `cognee_search`, `cognee_remember`. |
+| `get_tool_schemas()` | `cognee_recall`, `cognee_remember`, `cognee_forget`. |
 | `handle_tool_call(name, args)` | Dispatch; return JSON string. |
 | `shutdown()` | Flush buffer with bounded timeout; stop worker. |
 | `get_config_schema()` | Fields for `hermes memory setup` (below). |
@@ -121,9 +143,12 @@ fires at `on_session_end` and every `cognify_every_n_turns` turns. Never per-tur
   the result keyed by `session_id`.
 - Start of next turn → `prefetch(query)` returns the cached result instantly and it
   is injected as turn context. Default search type `CHUNKS` (fast, non-LLM).
-- `cognee_search(query, search_type?)` tool → on-demand search, default
+- `cognee_recall(query, search_type?, top_k?)` tool → on-demand search, default
   `GRAPH_COMPLETION` (rich, LLM-synthesised answer).
-- `cognee_remember(text)` tool → immediate `/add` + buffer flush.
+- `cognee_remember(content)` tool → immediate `/add` + buffer flush.
+- `cognee_forget(confirm, dataset?, data_id?)` tool → guarded deletion (requires
+  `confirm=true`); maps to the cognee REST delete endpoint. Verify exact endpoint
+  during implementation (`/api/v1/delete` / dataset delete).
 
 ## Configuration (`get_config_schema` → `hermes memory setup`)
 
@@ -160,8 +185,12 @@ trade-off for a unified graph and simpler cross-context recall.
 
 ## Testing
 
-Follow the Hermes `tests/plugins/memory/` style; pytest with a **fake httpx
-transport** (mirrors `paperclip-plugin-cognee/test/cognee-client.test.ts`). Cases:
+Adopt PR #26179's **discovery-path staging harness**: copy the plugin into a tmp
+`$HERMES_HOME/plugins/cognee/`, monkeypatch `plugins.memory._get_user_plugins_dir`,
+and load via `load_memory_provider("cognee")` so tests exercise the real
+user-installed discovery path (module name `_hermes_user_memory.cognee`). Drive the
+cognee REST API with a **fake `httpx` transport** (`httpx.MockTransport`) — our
+remote-REST analogue of the reference's `FakeCogneeAPI`. Cases:
 - `client`: add multipart shape (datasets + node_set), cognify payload, search payload
   + response normalisation, auth header when token set, error raises on non-2xx.
 - buffering: flush at `add_buffer_size`, flush at session end.
@@ -175,12 +204,29 @@ transport** (mirrors `paperclip-plugin-cognee/test/cognee-client.test.ts`). Case
   token to env).
 - graceful degradation: server errors never raise into turn loop; recall returns empty.
 
+## Divergences from the reference implementation (PR #26179)
+
+| Aspect | PR #26179 (reference) | This design | Why |
+|---|---|---|---|
+| cognee access | Embedded SDK (`import cognee`, local Lance/Kuzu/SQLite) | Remote REST over `httpx` to `truenas.local:8000` | Matches existing shared-graph infra; far lighter |
+| Dependency | `cognee>=1.0.9` + LLM key + embeddings | `httpx` only | No LLM/embedding config in the Hermes process |
+| Runtime hacks | instructor-cache scrub, WAL-mode SQLite, async loop bridge, `RLIMIT_NOFILE` raise | none needed | All handled server-side by the remote cognee |
+| `on_memory_write` | not implemented | implemented | Closes the #14368 durable-parity gap |
+| Builtin memory | declared DISABLED ("only provider") | stays ACTIVE; cognee layers alongside | Your chosen role |
+| Tools | `cognee_recall` / `cognee_remember` / `cognee_forget` | same (adopted) | Good fit; cognee-native terminology |
+| Cognify | implicit via SDK `remember(self_improvement=True)` | explicit `/add` buffer → background `/cognify` cadence | REST API separates ingest from graph build |
+| Dataset/scope | `hermes_memory` dataset | `main_dataset` + `node_set: hermes` | Shared-graph convention |
+
 ## Out of scope
 
 - Per-user / per-platform node_set isolation.
 - Migrating historical data already cognified by the current hook-based flow.
 - Changes to the upstream `hermes-agent` repo.
 - Replacing builtin file memory (it stays active; cognee layers alongside).
+- **Embedded-SDK concerns** — `RLIMIT_NOFILE` / Lance "Too many open files" (#14368),
+  WAL-mode SQLite multi-process locking, and instructor stale-cache scrubbing. These
+  are artifacts of running cognee in-process; the remote-REST architecture sidesteps
+  them entirely (the server owns its own DBs and file descriptors).
 
 ## Open follow-ups (post-MVP)
 
