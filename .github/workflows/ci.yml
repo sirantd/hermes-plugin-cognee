@@ -1,0 +1,14 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Clone hermes-agent (provides MemoryProvider ABC)
+        run: git clone --depth 1 https://github.com/NousResearch/hermes-agent hermes-agent
+      - run: pip install -r requirements-dev.txt
+      - run: HERMES_AGENT_PATH=$PWD/hermes-agent python -m pytest -v

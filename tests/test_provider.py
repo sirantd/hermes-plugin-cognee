@@ -223,3 +223,24 @@ def test_queue_prefetch_noop_before_initialize():
     provider.queue_prefetch("q", session_id="s")
     _join(provider)
     assert provider.prefetch("q", session_id="s") == ""
+
+
+def test_register_registers_provider():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "cognee_pkg_init", str(Path(__file__).resolve().parent.parent / "__init__.py")
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    class Ctx:
+        def __init__(self):
+            self.provider = None
+
+        def register_memory_provider(self, provider):
+            self.provider = provider
+
+    ctx = Ctx()
+    mod.register(ctx)
+    assert ctx.provider is not None
+    assert ctx.provider.name == "cognee"
