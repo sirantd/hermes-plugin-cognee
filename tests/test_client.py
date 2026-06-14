@@ -148,3 +148,16 @@ def test_delete_dataset_missing_name_returns_false():
         return httpx.Response(200, json=[{"id": "x", "name": "nope"}])
 
     assert _client(handler).delete_dataset_by_name("absent") is False
+
+
+def test_add_sends_auth_header_when_token_set():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["auth"] = request.headers.get("authorization", "")
+        return httpx.Response(200)
+
+    transport = httpx.MockTransport(handler)
+    cfg = CogneeConfig(base_url="http://test", auth_token="tok123")
+    CogneeClient(cfg, transport=transport).add(["x"])
+    assert seen["auth"] == "Bearer tok123"

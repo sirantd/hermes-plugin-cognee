@@ -86,7 +86,7 @@ class CogneeClient:
         data = {
             "datasetName": self._config.dataset,
             "node_set": self._config.node_set,
-            "run_in_background": "false",
+            "run_in_background": "false",  # multipart form value is a string, not a JSON bool
         }
         resp = self._http.post("/api/v1/add", data=data, files=files)
         resp.raise_for_status()
