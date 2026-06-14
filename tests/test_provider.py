@@ -65,3 +65,41 @@ def test_system_prompt_mentions_tools_and_does_not_disable_builtin():
     assert "cognee_recall" in block and "cognee_remember" in block and "cognee_forget" in block
     assert "DISABLED" not in block.upper()
     assert "alongside" in block.lower()
+
+
+def _join(provider):
+    for t in list(provider._threads):
+        t.join(timeout=2)
+
+
+def test_sync_turn_buffers_and_flushes_at_threshold():
+    provider, fake = make_provider(add_buffer_size=2)
+    provider.sync_turn("hello there", "general kenobi", session_id="sess-1")
+    assert fake.added == []  # 1 record buffered, threshold 2
+    provider.sync_turn("second user msg", "second assistant msg", session_id="sess-1")
+    _join(provider)
+    assert len(fake.added) == 1
+    assert any("general kenobi" in r for r in fake.added[0])
+
+
+def test_on_memory_write_mirrors_into_buffer():
+    provider, fake = make_provider(add_buffer_size=1)
+    provider.on_memory_write("add", "user", "lives in Brisbane")
+    _join(provider)
+    assert fake.added and any("Brisbane" in r for r in fake.added[0])
+
+
+def test_writes_skipped_for_non_primary_context():
+    provider, fake = make_provider(add_buffer_size=1)
+    provider._agent_context = "cron"
+    provider.sync_turn("u long enough content", "a long enough content", session_id="s")
+    provider.on_memory_write("add", "memory", "should not persist")
+    _join(provider)
+    assert fake.added == []
+
+
+def test_remove_action_not_buffered():
+    provider, fake = make_provider(add_buffer_size=1)
+    provider.on_memory_write("remove", "memory", "deleting this")
+    _join(provider)
+    assert fake.added == []

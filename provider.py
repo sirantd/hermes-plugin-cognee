@@ -130,3 +130,45 @@ class CogneeMemoryProvider(MemoryProvider):
             if key == "auth_token" or value in (None, ""):
                 continue
             set_config_value(f"memory.cognee.{key}", value)
+
+    _MIN_TURN_LEN = 16
+
+    def _spawn(self, fn) -> None:
+        thread = threading.Thread(target=fn, daemon=True)
+        self._threads = [t for t in self._threads if t.is_alive()]
+        self._threads.append(thread)
+        thread.start()
+
+    def _enqueue_write(self, text: str) -> None:
+        if self._agent_context != "primary" or not text or not text.strip():
+            return
+        flush = False
+        with self._buffer_lock:
+            self._buffer.append(text.strip())
+            if len(self._buffer) >= self._config.add_buffer_size:
+                flush = True
+        if flush:
+            self._spawn(self._flush)
+
+    def _flush(self) -> None:
+        with self._buffer_lock:
+            pending = self._buffer
+            self._buffer = []
+        if not pending:
+            return
+        try:
+            self._client.add(pending)
+        except Exception as exc:  # degrade — never break the turn
+            logger.warning("cognee add failed (%d records dropped): %s", len(pending), exc)
+
+    def sync_turn(self, user_content, assistant_content, *, session_id="", messages=None):
+        user_content = (user_content or "").strip()
+        assistant_content = (assistant_content or "").strip()
+        if len(user_content) + len(assistant_content) < self._MIN_TURN_LEN:
+            return
+        self._enqueue_write(f"[user]\n{user_content}\n\n[assistant]\n{assistant_content}")
+
+    def on_memory_write(self, action, target, content, metadata=None):
+        if action not in {"add", "replace"}:
+            return
+        self._enqueue_write(f"[memory:{target}] {content}")
