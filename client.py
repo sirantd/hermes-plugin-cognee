@@ -110,3 +110,8 @@ class CogneeClient:
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else [data]
+
+    def cognify(self) -> None:
+        payload = {"datasets": [self._config.dataset], "runInBackground": True}
+        resp = self._http.post("/api/v1/cognify", json=payload)
+        resp.raise_for_status()

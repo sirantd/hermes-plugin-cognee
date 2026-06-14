@@ -107,3 +107,17 @@ def test_search_wraps_non_list_response_in_list():
 
     out = _client(handler).search("q", search_type="CHUNKS")
     assert out == [{"answer": "42"}]
+
+
+def test_cognify_posts_camelcase_background_json():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["payload"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "started"})
+
+    _client(handler).cognify()
+
+    assert seen["url"] == "http://test/api/v1/cognify"
+    assert seen["payload"] == {"datasets": ["main_dataset"], "runInBackground": True}
