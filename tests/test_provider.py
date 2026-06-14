@@ -103,3 +103,32 @@ def test_remove_action_not_buffered():
     provider.on_memory_write("remove", "memory", "deleting this")
     _join(provider)
     assert fake.added == []
+
+
+def test_cognify_fires_every_n_turns():
+    provider, fake = make_provider(cognify_every_n_turns=3)
+    for i in range(2):
+        provider.on_turn_start(i + 1, "msg")
+    _join(provider)
+    assert fake.cognified == 0
+    provider.on_turn_start(3, "msg")  # 3rd turn → cognify
+    _join(provider)
+    assert fake.cognified == 1
+
+
+def test_session_end_flushes_then_cognifies():
+    provider, fake = make_provider(add_buffer_size=10)
+    provider.sync_turn("a meaningful user message", "a meaningful assistant reply", session_id="s")
+    assert fake.added == []  # buffered, below threshold
+    provider.on_session_end([{"role": "user", "content": "x"}])
+    _join(provider)
+    assert len(fake.added) == 1   # buffer flushed
+    assert fake.cognified == 1    # then cognify
+
+
+def test_session_end_skipped_for_non_primary():
+    provider, fake = make_provider()
+    provider._agent_context = "subagent"
+    provider.on_session_end([{"role": "user", "content": "x"}])
+    _join(provider)
+    assert fake.cognified == 0

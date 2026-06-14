@@ -172,3 +172,26 @@ class CogneeMemoryProvider(MemoryProvider):
         if action not in {"add", "replace"}:
             return
         self._enqueue_write(f"[memory:{target}] {content}")
+
+    def _cognify(self) -> None:
+        try:
+            self._client.cognify()
+        except Exception as exc:
+            logger.warning("cognee cognify failed: %s", exc)
+
+    def on_turn_start(self, turn_number, message, **kwargs):
+        if self._agent_context != "primary":
+            return
+        self._turn_counter += 1
+        if self._turn_counter % max(1, self._config.cognify_every_n_turns) == 0:
+            self._spawn(self._cognify)
+
+    def on_session_end(self, messages):
+        if self._agent_context != "primary":
+            return
+
+        def _finalize():
+            self._flush()
+            self._cognify()
+
+        self._spawn(_finalize)
