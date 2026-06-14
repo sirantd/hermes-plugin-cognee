@@ -70,6 +70,7 @@ class CogneeMemoryProvider(MemoryProvider):
         self._prefetch_cache: Dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
         self._threads: List[threading.Thread] = []
+        self._threads_lock = threading.Lock()
         self._initialized = False
 
     @property
@@ -135,8 +136,9 @@ class CogneeMemoryProvider(MemoryProvider):
 
     def _spawn(self, fn) -> None:
         thread = threading.Thread(target=fn, daemon=True)
-        self._threads = [t for t in self._threads if t.is_alive()]
-        self._threads.append(thread)
+        with self._threads_lock:
+            self._threads = [t for t in self._threads if t.is_alive()]
+            self._threads.append(thread)
         thread.start()
 
     def _enqueue_write(self, text: str) -> None:
@@ -182,8 +184,10 @@ class CogneeMemoryProvider(MemoryProvider):
     def on_turn_start(self, turn_number, message, **kwargs):
         if self._agent_context != "primary":
             return
-        self._turn_counter += 1
-        if self._turn_counter % max(1, self._config.cognify_every_n_turns) == 0:
+        with self._threads_lock:
+            self._turn_counter += 1
+            due = self._turn_counter % max(1, self._config.cognify_every_n_turns) == 0
+        if due:
             self._spawn(self._cognify)
 
     def on_session_end(self, messages):
@@ -251,7 +255,7 @@ class CogneeMemoryProvider(MemoryProvider):
                 content = str(args.get("content") or "").strip()
                 if not content:
                     return _err("content is required")
-                self._client.add([content])
+                self._client.add([content])  # blocking by design — model expects confirmation
                 return json.dumps({"ok": True})
             if tool_name == "cognee_recall":
                 query = str(args.get("query") or "").strip()
@@ -280,7 +284,9 @@ class CogneeMemoryProvider(MemoryProvider):
             self._flush()
         except Exception:
             logger.debug("flush during shutdown failed", exc_info=True)
-        for thread in list(self._threads):
+        with self._threads_lock:
+            threads = list(self._threads)
+        for thread in threads:
             thread.join(timeout=2)
         if self._client is not None:
             try:

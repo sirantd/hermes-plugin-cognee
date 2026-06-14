@@ -214,3 +214,12 @@ def test_remember_tool_degrades_on_client_error():
     fake.add = boom
     out = json.loads(provider.handle_tool_call("cognee_remember", {"content": "x meaningful"}))
     assert "error" in out  # error surfaced to model, no exception raised
+
+
+def test_queue_prefetch_noop_before_initialize():
+    cfg = CogneeConfig()
+    provider = CogneeMemoryProvider(config=cfg, client=FakeClient(cfg))
+    # not initialize()'d → _initialized is False
+    provider.queue_prefetch("q", session_id="s")
+    _join(provider)
+    assert provider.prefetch("q", session_id="s") == ""
