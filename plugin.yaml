@@ -1,0 +1,9 @@
+name: cognee
+version: 0.1.0
+description: "cognee — shared knowledge-graph long-term memory (remote cognee server) for Hermes."
+pip_dependencies:
+  - "httpx>=0.27"
+hooks:
+  - on_session_end
+  - on_memory_write
+  - on_turn_start
