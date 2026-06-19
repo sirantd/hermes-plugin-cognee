@@ -39,6 +39,16 @@ Non-secrets live under `memory.cognee` in `config.yaml`; the optional bearer tok
   `cognify_every_n_turns` and at session end.
 - `prefetch` injects fast `CHUNKS` recall each turn; tools `cognee_recall`,
   `cognee_remember`, `cognee_forget` are exposed to the model.
+- **Node-scoped prefetch:** the per-turn auto-prefetch is scoped to this agent's
+  own `node_set` (sent as the cognee `nodeName` search filter), so it only
+  surfaces this agent's memories — not unrelated documents that share the
+  dataset. Explicit `cognee_recall` is deliberately left **dataset-wide** so a
+  direct "check memory" request can reach everything in the dataset.
+- **Cognify-on-remember:** `cognee_remember` triggers a background `cognify` right
+  after the `add`, so explicitly-stored facts reach the graph promptly instead of
+  waiting for the `cognify_every_n_turns` cadence. The cognify runs in the
+  background (it can take tens of seconds), so the tool returns immediately and a
+  freshly-remembered fact is not instantly searchable.
 - cognee is best-effort: a down server never breaks a turn.
 
 ## Development

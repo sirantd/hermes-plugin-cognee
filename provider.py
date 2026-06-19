@@ -225,6 +225,7 @@ class CogneeMemoryProvider(MemoryProvider):
                     search_type=self._config.prefetch_search_type,
                     top_k=5,
                     only_context=True,
+                    node_name=[self._config.node_set] if self._config.node_set else None,
                 )
                 formatted = self._format_recall(results)
                 if formatted:
@@ -256,6 +257,10 @@ class CogneeMemoryProvider(MemoryProvider):
                 if not content:
                     return _err("content is required")
                 self._client.add([content])  # blocking by design — model expects confirmation
+                # cognify-on-remember: explicit facts should reach the graph promptly
+                # instead of waiting for the every-N-turns cadence. Spawn in the
+                # background so the tool returns immediately (cognify can be slow).
+                self._spawn(self._cognify)
                 return json.dumps({"ok": True})
             if tool_name == "cognee_recall":
                 query = str(args.get("query") or "").strip()
