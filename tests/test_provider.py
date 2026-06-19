@@ -26,8 +26,8 @@ class FakeClient:
     def cognify(self):
         self.cognified += 1
 
-    def search(self, query, *, search_type, top_k=10, only_context=False):
-        self.searched.append((query, search_type, top_k, only_context))
+    def search(self, query, *, search_type, top_k=10, only_context=False, node_name=None):
+        self.searched.append((query, search_type, top_k, only_context, node_name))
         return list(self.search_return)
 
     def delete_dataset_by_name(self, name):
@@ -144,6 +144,8 @@ def test_queue_prefetch_populates_cache_consumed_by_prefetch():
     assert "<cognee-memory>" in out
     # prefetch uses the configured fast search type
     assert fake.searched and fake.searched[0][1] == "CHUNKS"
+    # prefetch is scoped to the agent's own node_set (no cross-tenant noise)
+    assert fake.searched[0][4] == ["hermes"]
     # cache is consumed (one-shot)
     assert provider.prefetch("background", session_id="sess-1") == ""
 
@@ -174,6 +176,9 @@ def test_remember_tool_adds_and_flushes_immediately():
     out = json.loads(provider.handle_tool_call("cognee_remember", {"content": "I prefer dark mode"}))
     assert out["ok"] is True
     assert fake.added and any("dark mode" in r for r in fake.added[0])
+    # cognify-on-remember: the fact is cognified into the graph promptly (background)
+    _join(provider)
+    assert fake.cognified >= 1
 
 
 def test_recall_tool_uses_tool_search_type():
@@ -183,6 +188,8 @@ def test_recall_tool_uses_tool_search_type():
     assert out["ok"] is True
     assert fake.searched[0][1] == "GRAPH_COMPLETION"
     assert fake.searched[0][2] == 4
+    # explicit recall is NOT node-scoped — reaches the whole dataset
+    assert fake.searched[0][4] is None
 
 
 def test_forget_requires_confirm():

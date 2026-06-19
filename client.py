@@ -98,14 +98,20 @@ class CogneeClient:
         search_type: str,
         top_k: int = 10,
         only_context: bool = False,
+        node_name: Optional[List[str]] = None,
     ) -> List[Any]:
-        payload = {
+        payload: Dict[str, Any] = {
             "searchType": search_type,
             "datasets": [self._config.dataset],
             "query": query,
             "topK": top_k,
             "onlyContext": only_context,
         }
+        # Scope results to specific node_set tags when requested. The cognee REST
+        # API exposes this as `nodeName` (array). Used for agent-scoped prefetch;
+        # omitted for explicit cognee_recall so it can reach the whole dataset.
+        if node_name:
+            payload["nodeName"] = node_name
         resp = self._http.post("/api/v1/search", json=payload)
         resp.raise_for_status()
         data = resp.json()
