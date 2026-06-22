@@ -54,7 +54,7 @@ except ImportError:  # flat import during standalone unit tests
 - Create: `plugin.yaml`, `.gitignore`, `requirements-dev.txt`, `conftest.py`
 - Test: `tests/test_client.py` (manifest smoke test for now)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_client.py`:
 ```python
@@ -72,12 +72,12 @@ def test_plugin_manifest_valid():
     assert "on_memory_write" in manifest["hooks"]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_client.py::test_plugin_manifest_valid -v`
 Expected: FAIL — `FileNotFoundError: plugin.yaml`.
 
-- [ ] **Step 3: Create the scaffold files**
+- [x] **Step 3: Create the scaffold files**
 
 `plugin.yaml`:
 ```yaml
@@ -133,12 +133,12 @@ for _c in _candidates:
         break
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_client.py::test_plugin_manifest_valid -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plugin.yaml .gitignore requirements-dev.txt conftest.py tests/test_client.py
@@ -153,7 +153,7 @@ git commit -m "chore: scaffold cognee plugin repo + manifest smoke test"
 - Create: `client.py`
 - Test: `tests/test_client.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_client.py`:
 ```python
@@ -183,12 +183,12 @@ def test_config_from_mapping_overrides_defaults():
     assert cfg.node_set == "hermes"  # untouched default
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_client.py -k config -v`
 Expected: FAIL — `ImportError: cannot import name 'CogneeConfig'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `client.py`:
 ```python
@@ -247,12 +247,12 @@ class CogneeConfig:
         return cfg
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_client.py -k config -v`
 Expected: PASS (both config tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client.py tests/test_client.py
@@ -267,7 +267,7 @@ git commit -m "feat: add CogneeConfig with defaults and config resolution"
 - Modify: `client.py`
 - Test: `tests/test_client.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_client.py`:
 ```python
@@ -309,12 +309,12 @@ def test_add_empty_list_is_noop():
     _client(handler).add([])  # no exception, no request
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_client.py -k add -v`
 Expected: FAIL — `ImportError: cannot import name 'CogneeClient'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `client.py`:
 ```python
@@ -357,12 +357,12 @@ class CogneeClient:
         resp.raise_for_status()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_client.py -k add -v`
 Expected: PASS (both add tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client.py tests/test_client.py
@@ -377,7 +377,7 @@ git commit -m "feat: add CogneeClient.add multipart ingest"
 - Modify: `client.py`
 - Test: `tests/test_client.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_client.py`:
 ```python
@@ -414,12 +414,12 @@ def test_search_wraps_non_list_response_in_list():
     assert out == [{"answer": "42"}]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_client.py -k search -v`
 Expected: FAIL — `AttributeError: 'CogneeClient' object has no attribute 'search'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeClient` in `client.py`:
 ```python
@@ -444,12 +444,12 @@ Append to `CogneeClient` in `client.py`:
         return data if isinstance(data, list) else [data]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_client.py -k search -v`
 Expected: PASS (both search tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client.py tests/test_client.py
@@ -464,7 +464,7 @@ git commit -m "feat: add CogneeClient.search with response normalization"
 - Modify: `client.py`
 - Test: `tests/test_client.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_client.py`:
 ```python
@@ -482,12 +482,12 @@ def test_cognify_posts_camelcase_background_json():
     assert seen["payload"] == {"datasets": ["main_dataset"], "runInBackground": True}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_client.py -k cognify -v`
 Expected: FAIL — no attribute `cognify`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeClient` in `client.py`:
 ```python
@@ -497,12 +497,12 @@ Append to `CogneeClient` in `client.py`:
         resp.raise_for_status()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_client.py -k cognify -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client.py tests/test_client.py
@@ -517,7 +517,7 @@ git commit -m "feat: add CogneeClient.cognify background graph build"
 - Modify: `client.py`
 - Test: `tests/test_client.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_client.py`:
 ```python
@@ -548,12 +548,12 @@ def test_delete_dataset_missing_name_returns_false():
     assert _client(handler).delete_dataset_by_name("absent") is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_client.py -k delete_dataset -v`
 Expected: FAIL — no attribute `delete_dataset_by_name`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeClient` in `client.py`:
 ```python
@@ -576,12 +576,12 @@ Append to `CogneeClient` in `client.py`:
         return True
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_client.py -k delete_dataset -v`
 Expected: PASS (both tests). Then full client suite: `python -m pytest tests/test_client.py -v` → all PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client.py tests/test_client.py
@@ -598,7 +598,7 @@ git commit -m "feat: add dataset resolve + delete for cognee_forget"
 
 > Provider tests inject a `FakeClient` (records calls) — no httpx, deterministic. They `importorskip` the real ABC. Ensure a hermes-agent checkout is on `sys.path` (see Task 12 dev-setup / conftest) or these tests skip.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_provider.py`:
 ```python
@@ -671,12 +671,12 @@ def test_system_prompt_mentions_tools_and_does_not_disable_builtin():
     assert "alongside" in block.lower()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_provider.py -k "name_and_availability or config_schema or system_prompt" -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'provider'` (or skip if no hermes-agent checkout — set one up per Task 12 first).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `provider.py`:
 ```python
@@ -813,12 +813,12 @@ class CogneeMemoryProvider(MemoryProvider):
 
 > NOTE: `set_config_value` is the assumed Hermes config writer. During implementation, confirm the exact non-secret writer in `hermes_cli/config.py` (grep for `def save_` / `def set_config`); if the name differs, adjust this method only. Unit tests stub these helpers, so the suite is unaffected.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_provider.py -k "name_and_availability or config_schema or system_prompt" -v`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add provider.py tests/test_provider.py
@@ -833,7 +833,7 @@ git commit -m "feat: add CogneeMemoryProvider skeleton (identity, config, prompt
 - Modify: `provider.py`
 - Test: `tests/test_provider.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_provider.py`:
 ```python
@@ -875,12 +875,12 @@ def test_remove_action_not_buffered():
     assert fake.added == []
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_provider.py -k "buffers or mirrors or non_primary or remove_action" -v`
 Expected: FAIL — `sync_turn` is the ABC no-op, so nothing buffers.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeMemoryProvider` in `provider.py`:
 ```python
@@ -927,12 +927,12 @@ Append to `CogneeMemoryProvider` in `provider.py`:
         self._enqueue_write(f"[memory:{target}] {content}")
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_provider.py -k "buffers or mirrors or non_primary or remove_action" -v`
 Expected: PASS (4 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add provider.py tests/test_provider.py
@@ -947,7 +947,7 @@ git commit -m "feat: buffered write path with agent_context gating"
 - Modify: `provider.py`
 - Test: `tests/test_provider.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_provider.py`:
 ```python
@@ -980,12 +980,12 @@ def test_session_end_skipped_for_non_primary():
     assert fake.cognified == 0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_provider.py -k "every_n_turns or session_end" -v`
 Expected: FAIL — `on_turn_start`/`on_session_end` are ABC no-ops.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeMemoryProvider` in `provider.py`:
 ```python
@@ -1013,12 +1013,12 @@ Append to `CogneeMemoryProvider` in `provider.py`:
         self._spawn(_finalize)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_provider.py -k "every_n_turns or session_end" -v`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add provider.py tests/test_provider.py
@@ -1033,7 +1033,7 @@ git commit -m "feat: cognify cadence (per-N-turns + session end)"
 - Modify: `provider.py`
 - Test: `tests/test_provider.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_provider.py`:
 ```python
@@ -1066,12 +1066,12 @@ def test_session_switch_resets_session_and_cache_on_reset():
     assert provider.prefetch("q", session_id="sess-1") == ""  # cache cleared
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_provider.py -k "prefetch or session_switch" -v`
 Expected: FAIL — `queue_prefetch`/`prefetch` are ABC no-ops returning "".
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeMemoryProvider` in `provider.py`:
 ```python
@@ -1125,12 +1125,12 @@ Append to `CogneeMemoryProvider` in `provider.py`:
                 self._prefetch_cache.clear()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_provider.py -k "prefetch or session_switch" -v`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add provider.py tests/test_provider.py
@@ -1145,7 +1145,7 @@ git commit -m "feat: background prefetch cache + session-switch handling"
 - Modify: `provider.py`
 - Test: `tests/test_provider.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_provider.py`:
 ```python
@@ -1202,12 +1202,12 @@ def test_remember_tool_degrades_on_client_error():
     assert "error" in out  # error surfaced to model, no exception raised
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_provider.py -k "tool" -v`
 Expected: FAIL — `get_tool_schemas` returns `[]`, `handle_tool_call` raises `NotImplementedError`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `CogneeMemoryProvider` in `provider.py`:
 ```python
@@ -1258,12 +1258,12 @@ Append to `CogneeMemoryProvider` in `provider.py`:
                 pass
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_provider.py -v`
 Expected: PASS (all provider tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add provider.py tests/test_provider.py
@@ -1278,7 +1278,7 @@ git commit -m "feat: cognee tools (recall/remember/forget) + graceful degradatio
 - Create: `__init__.py`, `cli.py`, `README.md`, `.github/workflows/ci.yml`
 - Test: `tests/test_provider.py` (registration test)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_provider.py`:
 ```python
@@ -1306,12 +1306,12 @@ def test_register_registers_provider():
     assert ctx.provider.name == "cognee"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_provider.py::test_register_registers_provider -v`
 Expected: FAIL — `__init__.py` has no `register`.
 
-- [ ] **Step 3: Write the implementation files**
+- [x] **Step 3: Write the implementation files**
 
 `__init__.py`:
 ```python
@@ -1454,7 +1454,7 @@ jobs:
       - run: HERMES_AGENT_PATH=$PWD/hermes-agent python -m pytest -v
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Set up the dev dependency once, then run the full suite:
 ```bash
@@ -1464,7 +1464,7 @@ HERMES_AGENT_PATH=$PWD/hermes-agent python -m pytest -v
 ```
 Expected: ALL tests PASS (client + provider + registration).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add __init__.py cli.py README.md .github/workflows/ci.yml tests/test_provider.py
@@ -1477,18 +1477,18 @@ git commit -m "feat: registration entry point, CLI, README, CI"
 
 **Files:** none (ops task)
 
-- [ ] **Step 1: Create the public GitHub repo and push**
+- [x] **Step 1: Create the public GitHub repo and push**
 
 ```bash
 cd ~/Projects/personal/hermes-plugin-cognee
 gh repo create sirantd/hermes-plugin-cognee --public --source . --remote origin --push
 ```
 
-- [ ] **Step 2: Confirm CI is green**
+- [x] **Step 2: Confirm CI is green**
 
 Run: `gh run watch` (or `gh run list -L 1`). Expected: the `ci` workflow passes.
 
-- [ ] **Step 3: Install on the Hermes VM**
+- [x] **Step 3: Install on the Hermes VM**
 
 ```bash
 ssh hermes '~/.local/bin/hermes plugins install sirantd/hermes-plugin-cognee && \
@@ -1496,16 +1496,17 @@ ssh hermes '~/.local/bin/hermes plugins install sirantd/hermes-plugin-cognee && 
 ```
 Expected: plugin cloned into `~/.hermes/plugins/cognee/`; `hermes plugins list` shows `cognee`.
 
-- [ ] **Step 4: Verify reachability + live recall from the VM**
+- [x] **Step 4: Verify reachability + live recall from the VM**
 
 ```bash
 ssh hermes '~/.local/bin/hermes cognee status'
 ```
-Expected: `cognee OK @ http://truenas.local:8000 — dataset=main_dataset node_set=hermes (N datasets visible)`.
+Expected: `cognee OK @ http://truenas.local:8000 — dataset=main_dataset node_set=hermes_agent (N datasets visible)`.
+Confirmed live: `cognee OK @ http://truenas.local:8000 — dataset=main_dataset node_set=hermes_agent (1 datasets visible)`. The VM config overrides node_set to `hermes_agent` (more explicit than the code default `hermes`).
 
-- [ ] **Step 5: Smoke-test a real session, then retire the old hooks**
+- [x] **Step 5: Smoke-test a real session** — confirmed: a short session was captured and surfaced via `hermes cognee recall`.
 
-Run a short gateway/CLI session, confirm via `hermes cognee recall "<something you just told it>"` that the turn was captured, then remove the legacy SessionEnd cognee flush hook + cognee-note buffer (out of scope to script here — do it once parity is confirmed). Commit any config cleanup.
+- [x] ~~**Step 6: Retire the old hooks**~~ — **OBSOLETE, not done (intentional).** The "legacy" `~/.claude/hooks/cognee-note` + `cognee-session-flush` belong to **Claude Code on the workstation**, capturing *all* projects (node_set = git basename) at SessionEnd. This plugin runs inside the **Hermes agent on the VM** and only captures Hermes-agent sessions. The two cover different agents writing to the same shared graph, so there is no parity to reach — removing the workstation hooks would just kill Claude Code's auto-capture everywhere. Hooks intentionally kept.
 
 ---
 
