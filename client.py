@@ -16,13 +16,17 @@ logger = logging.getLogger(__name__)
 class CogneeConfig:
     base_url: str = "http://truenas.local:8000"
     dataset: str = "main_dataset"
-    node_set: str = "hermes"
+    node_set: str = "hermes_agent"
     auth_token: str = ""
     prefetch_search_type: str = "CHUNKS"
     tool_search_type: str = "GRAPH_COMPLETION"
     cognify_every_n_turns: int = 10
     add_buffer_size: int = 5
     request_timeout: float = 30.0
+    # Server-side cognify concurrency cap. cognee defaults to 20 parallel
+    # documents, which swamps the rate-limited local LLM backend; the homelab
+    # ingest pipeline uses the same cap.
+    cognify_data_per_batch: int = 2
 
     @classmethod
     def from_mapping(cls, data: Optional[Dict[str, Any]]) -> "CogneeConfig":
@@ -118,7 +122,11 @@ class CogneeClient:
         return data if isinstance(data, list) else [data]
 
     def cognify(self) -> None:
-        payload = {"datasets": [self._config.dataset], "runInBackground": True}
+        payload = {
+            "datasets": [self._config.dataset],
+            "runInBackground": True,
+            "dataPerBatch": self._config.cognify_data_per_batch,
+        }
         resp = self._http.post("/api/v1/cognify", json=payload)
         resp.raise_for_status()
 

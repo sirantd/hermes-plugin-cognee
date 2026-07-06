@@ -19,12 +19,13 @@ def test_config_defaults():
     cfg = CogneeConfig()
     assert cfg.base_url == "http://truenas.local:8000"
     assert cfg.dataset == "main_dataset"
-    assert cfg.node_set == "hermes"
+    assert cfg.node_set == "hermes_agent"
     assert cfg.prefetch_search_type == "CHUNKS"
     assert cfg.tool_search_type == "GRAPH_COMPLETION"
     assert cfg.cognify_every_n_turns == 10
     assert cfg.add_buffer_size == 5
     assert cfg.request_timeout == 30.0
+    assert cfg.cognify_data_per_batch == 2
     assert cfg.auth_token == ""
 
 
@@ -35,7 +36,7 @@ def test_config_from_mapping_overrides_defaults():
     assert cfg.base_url == "http://x:9000"
     assert cfg.dataset == "d"
     assert cfg.cognify_every_n_turns == 3
-    assert cfg.node_set == "hermes"  # untouched default
+    assert cfg.node_set == "hermes_agent"  # untouched default
 
 
 import httpx
@@ -65,7 +66,7 @@ def test_add_posts_multipart_with_dataset_and_node_set():
     body = seen["body"]
     assert b"main_dataset" in body          # datasetName field
     assert b'name="node_set"' in body
-    assert b"hermes" in body
+    assert b"hermes_agent" in body
     assert b"fact one" in body and b"fact two" in body
 
 
@@ -120,7 +121,11 @@ def test_cognify_posts_camelcase_background_json():
     _client(handler).cognify()
 
     assert seen["url"] == "http://test/api/v1/cognify"
-    assert seen["payload"] == {"datasets": ["main_dataset"], "runInBackground": True}
+    assert seen["payload"] == {
+        "datasets": ["main_dataset"],
+        "runInBackground": True,
+        "dataPerBatch": 2,
+    }
 
 
 def test_delete_dataset_resolves_name_to_id():
