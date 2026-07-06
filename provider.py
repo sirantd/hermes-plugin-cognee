@@ -42,14 +42,22 @@ RECALL_SCHEMA = {
 
 FORGET_SCHEMA = {
     "name": "cognee_forget",
-    "description": "Delete/reset a cognee dataset. Only after an explicit user deletion request.",
+    "description": (
+        "Delete an ENTIRE cognee dataset. The configured dataset is shared by "
+        "multiple agents (all node_set partitions), so this wipes everyone's "
+        "memory, not just this agent's. Only after an explicit user deletion "
+        "request that names the dataset."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "confirm": {"type": "boolean", "description": "Must be true to execute deletion."},
-            "dataset": {"type": "string", "description": "Dataset name (defaults to the configured one)."},
+            "dataset": {
+                "type": "string",
+                "description": "Exact dataset name to delete. Required — there is no default.",
+            },
         },
-        "required": ["confirm"],
+        "required": ["confirm", "dataset"],
     },
 }
 
@@ -110,7 +118,7 @@ class CogneeMemoryProvider(MemoryProvider):
         return [
             {"key": "base_url", "description": "cognee server base URL", "default": "http://truenas.local:8000"},
             {"key": "dataset", "description": "cognee dataset name", "default": "main_dataset"},
-            {"key": "node_set", "description": "node_set partition for this agent", "default": "hermes"},
+            {"key": "node_set", "description": "node_set partition for this agent", "default": "hermes_agent"},
             {"key": "auth_token", "description": "Optional bearer token", "secret": True, "env_var": "COGNEE_AUTH_TOKEN"},
             {"key": "prefetch_search_type", "description": "SearchType for auto-prefetch", "default": "CHUNKS"},
             {"key": "tool_search_type", "description": "SearchType for cognee_recall", "default": "GRAPH_COMPLETION"},
@@ -152,6 +160,10 @@ class CogneeMemoryProvider(MemoryProvider):
         if flush:
             self._spawn(self._flush)
 
+    # Requeued records survive transient failures, but never let an extended
+    # outage grow the buffer without bound.
+    _MAX_BUFFERED = 100
+
     def _flush(self) -> None:
         with self._buffer_lock:
             pending = self._buffer
@@ -161,7 +173,16 @@ class CogneeMemoryProvider(MemoryProvider):
         try:
             self._client.add(pending)
         except Exception as exc:  # degrade — never break the turn
-            logger.warning("cognee add failed (%d records dropped): %s", len(pending), exc)
+            with self._buffer_lock:
+                requeued = (pending + self._buffer)[-self._MAX_BUFFERED :]
+                dropped = len(pending) + len(self._buffer) - len(requeued)
+                self._buffer = requeued
+            logger.warning(
+                "cognee add failed (%d records requeued, %d dropped): %s",
+                len(requeued),
+                dropped,
+                exc,
+            )
 
     def sync_turn(self, user_content, assistant_content, *, session_id="", messages=None):
         user_content = (user_content or "").strip()
@@ -276,7 +297,15 @@ class CogneeMemoryProvider(MemoryProvider):
             if tool_name == "cognee_forget":
                 if args.get("confirm") is not True:
                     return _err("cognee_forget requires confirm=true after an explicit deletion request")
-                dataset = str(args.get("dataset") or self._config.dataset)
+                # The dataset is shared across agents — deleting it destroys every
+                # agent's memory. Never default it; the model must name it, echoing
+                # an explicit user request.
+                dataset = str(args.get("dataset") or "").strip()
+                if not dataset:
+                    return _err(
+                        "cognee_forget requires the exact dataset name; it is shared "
+                        "across agents and will be deleted for all of them"
+                    )
                 deleted = self._client.delete_dataset_by_name(dataset)
                 return json.dumps({"ok": True, "deleted": deleted, "dataset": dataset})
             return _err(f"Unknown cognee tool: {tool_name}")

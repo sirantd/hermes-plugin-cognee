@@ -145,7 +145,7 @@ def test_queue_prefetch_populates_cache_consumed_by_prefetch():
     # prefetch uses the configured fast search type
     assert fake.searched and fake.searched[0][1] == "CHUNKS"
     # prefetch is scoped to the agent's own node_set (no cross-tenant noise)
-    assert fake.searched[0][4] == ["hermes"]
+    assert fake.searched[0][4] == ["hermes_agent"]
     # cache is consumed (one-shot)
     assert provider.prefetch("background", session_id="sess-1") == ""
 
@@ -199,11 +199,39 @@ def test_forget_requires_confirm():
     assert fake.deleted == []
 
 
-def test_forget_with_confirm_deletes_dataset():
+def test_forget_requires_explicit_dataset_name():
+    # The dataset is shared across agents — no defaulting allowed.
     provider, fake = make_provider()
     out = json.loads(provider.handle_tool_call("cognee_forget", {"confirm": True}))
+    assert "error" in out
+    assert fake.deleted == []
+
+
+def test_forget_with_confirm_and_dataset_deletes():
+    provider, fake = make_provider()
+    out = json.loads(
+        provider.handle_tool_call("cognee_forget", {"confirm": True, "dataset": "main_dataset"})
+    )
     assert out["ok"] is True
     assert fake.deleted == ["main_dataset"]
+
+
+def test_flush_requeues_buffer_on_add_failure():
+    provider, fake = make_provider(add_buffer_size=1)
+
+    def failing_add(texts):
+        raise RuntimeError("server down")
+
+    fake.add = failing_add
+    provider.sync_turn("a meaningful user message", "a meaningful assistant reply")
+    _join(provider)
+    assert provider._buffer  # records requeued, not dropped
+
+    # Restore the client; the next flush delivers the requeued records.
+    delivered = []
+    fake.add = lambda texts: delivered.append(list(texts))
+    provider._flush()
+    assert delivered and "meaningful user message" in delivered[0][0]
 
 
 def test_unknown_tool_returns_error():

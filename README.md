@@ -26,7 +26,7 @@ Non-secrets live under `memory.cognee` in `config.yaml`; the optional bearer tok
 |---|---|
 | `base_url` | `http://truenas.local:8000` |
 | `dataset` | `main_dataset` |
-| `node_set` | `hermes` |
+| `node_set` | `hermes_agent` |
 | `prefetch_search_type` | `CHUNKS` |
 | `tool_search_type` | `GRAPH_COMPLETION` |
 | `cognify_every_n_turns` | `10` |
