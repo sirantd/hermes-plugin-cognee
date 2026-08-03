@@ -95,6 +95,31 @@ class CogneeClient:
         resp = self._http.post("/api/v1/add", data=data, files=files)
         resp.raise_for_status()
 
+    def remember(self, texts: List[str], *, session_id: Optional[str] = None) -> None:
+        """Ingest and build the graph in a single server-side call (``/api/v1/remember``).
+
+        Replaces the client-side add + cognify pair for explicit facts. With a
+        ``session_id`` the fact also lands in the server's session cache, so a
+        session-scoped ``recall`` can see it before the background graph build
+        finishes.
+        """
+        texts = [t for t in texts if t and t.strip()]
+        if not texts:
+            return
+        files = [
+            ("data", (f"memory_{i}.md", io.BytesIO(t.encode("utf-8")), "text/markdown"))
+            for i, t in enumerate(texts)
+        ]
+        data = {
+            "datasetName": self._config.dataset,
+            "node_set": self._config.node_set,
+            "run_in_background": "true",  # multipart form value is a string, not a JSON bool
+        }
+        if session_id:
+            data["session_id"] = session_id
+        resp = self._http.post("/api/v1/remember", data=data, files=files)
+        resp.raise_for_status()
+
     def search(
         self,
         query: str,
@@ -121,6 +146,49 @@ class CogneeClient:
         data = resp.json()
         return data if isinstance(data, list) else [data]
 
+    def recall(
+        self,
+        query: str,
+        *,
+        search_type: str,
+        top_k: int = 10,
+        only_context: bool = False,
+        node_name: Optional[List[str]] = None,
+        session_id: Optional[str] = None,
+    ) -> List[Any]:
+        """Memory-aware search via ``/api/v1/recall``.
+
+        Unlike ``/api/v1/search`` this also covers the server's session cache,
+        so facts remembered with a ``session_id`` are recallable in the same
+        session before the background graph build completes.
+        """
+        payload: Dict[str, Any] = {
+            "searchType": search_type,
+            "datasets": [self._config.dataset],
+            "query": query,
+            "topK": top_k,
+            "onlyContext": only_context,
+        }
+        if node_name:
+            payload["nodeName"] = node_name
+        if session_id:
+            payload["sessionId"] = session_id
+        resp = self._http.post("/api/v1/recall", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data if isinstance(data, list) else [data]
+
+    def forget(self, dataset: str, *, memory_only: bool = False) -> None:
+        """Delete a dataset via ``/api/v1/forget``.
+
+        With ``memory_only`` the graph nodes/edges and vector embeddings are
+        wiped but raw files and data records survive, so the dataset can be
+        re-cognified from scratch.
+        """
+        payload = {"dataset": dataset, "memoryOnly": memory_only}
+        resp = self._http.post("/api/v1/forget", json=payload)
+        resp.raise_for_status()
+
     def cognify(self) -> None:
         payload = {
             "datasets": [self._config.dataset],
@@ -135,15 +203,3 @@ class CogneeClient:
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else []
-
-    def delete_dataset_by_name(self, name: str) -> bool:
-        dataset_id = None
-        for ds in self.list_datasets():
-            if isinstance(ds, dict) and ds.get("name") == name:
-                dataset_id = ds.get("id")
-                break
-        if not dataset_id:
-            return False
-        resp = self._http.delete(f"/api/v1/datasets/{dataset_id}")
-        resp.raise_for_status()
-        return True
