@@ -43,10 +43,11 @@ RECALL_SCHEMA = {
 FORGET_SCHEMA = {
     "name": "cognee_forget",
     "description": (
-        "Delete an ENTIRE cognee dataset. The configured dataset is shared by "
+        "Delete a cognee dataset. The configured dataset is shared by "
         "multiple agents (all node_set partitions), so this wipes everyone's "
         "memory, not just this agent's. Only after an explicit user deletion "
-        "request that names the dataset."
+        "request that names the dataset. With memory_only=true only the graph "
+        "and embeddings are wiped; raw records survive and can be re-cognified."
     ),
     "parameters": {
         "type": "object",
@@ -55,6 +56,14 @@ FORGET_SCHEMA = {
             "dataset": {
                 "type": "string",
                 "description": "Exact dataset name to delete. Required — there is no default.",
+            },
+            "memory_only": {
+                "type": "boolean",
+                "description": (
+                    "If true, delete only graph nodes/edges and embeddings; "
+                    "raw files and data records are preserved. Default false "
+                    "(full dataset deletion)."
+                ),
             },
         },
         "required": ["confirm", "dataset"],
@@ -241,12 +250,16 @@ class CogneeMemoryProvider(MemoryProvider):
 
         def _run():
             try:
-                results = self._client.search(
+                # recall (not search) so the session cache is covered too:
+                # facts remembered this session surface before the background
+                # graph build finishes.
+                results = self._client.recall(
                     query,
                     search_type=self._config.prefetch_search_type,
                     top_k=5,
                     only_context=True,
                     node_name=[self._config.node_set] if self._config.node_set else None,
+                    session_id=sid or None,
                 )
                 formatted = self._format_recall(results)
                 if formatted:
@@ -277,11 +290,9 @@ class CogneeMemoryProvider(MemoryProvider):
                 content = str(args.get("content") or "").strip()
                 if not content:
                     return _err("content is required")
-                self._client.add([content])  # blocking by design — model expects confirmation
-                # cognify-on-remember: explicit facts should reach the graph promptly
-                # instead of waiting for the every-N-turns cadence. Spawn in the
-                # background so the tool returns immediately (cognify can be slow).
-                self._spawn(self._cognify)
+                # Single server-side add+cognify; the session_id keeps the fact
+                # recallable this session while the graph builds in the background.
+                self._client.remember([content], session_id=self._session_id or None)
                 return json.dumps({"ok": True})
             if tool_name == "cognee_recall":
                 query = str(args.get("query") or "").strip()
@@ -306,8 +317,9 @@ class CogneeMemoryProvider(MemoryProvider):
                         "cognee_forget requires the exact dataset name; it is shared "
                         "across agents and will be deleted for all of them"
                     )
-                deleted = self._client.delete_dataset_by_name(dataset)
-                return json.dumps({"ok": True, "deleted": deleted, "dataset": dataset})
+                memory_only = args.get("memory_only") is True
+                self._client.forget(dataset, memory_only=memory_only)
+                return json.dumps({"ok": True, "dataset": dataset, "memory_only": memory_only})
             return _err(f"Unknown cognee tool: {tool_name}")
         except Exception as exc:
             logger.warning("cognee tool %s failed: %s", tool_name, exc)

@@ -15,13 +15,18 @@ class FakeClient:
     def __init__(self, config):
         self.config = config
         self.added = []
+        self.remembered = []
         self.cognified = 0
         self.searched = []
-        self.deleted = []
+        self.recalled = []
+        self.forgotten = []
         self.search_return = [{"text": "recalled context"}]
 
     def add(self, texts):
         self.added.append(list(texts))
+
+    def remember(self, texts, *, session_id=None):
+        self.remembered.append((list(texts), session_id))
 
     def cognify(self):
         self.cognified += 1
@@ -30,9 +35,12 @@ class FakeClient:
         self.searched.append((query, search_type, top_k, only_context, node_name))
         return list(self.search_return)
 
-    def delete_dataset_by_name(self, name):
-        self.deleted.append(name)
-        return True
+    def recall(self, query, *, search_type, top_k=10, only_context=False, node_name=None, session_id=None):
+        self.recalled.append((query, search_type, top_k, only_context, node_name, session_id))
+        return list(self.search_return)
+
+    def forget(self, dataset, *, memory_only=False):
+        self.forgotten.append((dataset, memory_only))
 
     def close(self):
         pass
@@ -142,10 +150,12 @@ def test_queue_prefetch_populates_cache_consumed_by_prefetch():
     out = provider.prefetch("background", session_id="sess-1")
     assert "tech lead" in out
     assert "<cognee-memory>" in out
-    # prefetch uses the configured fast search type
-    assert fake.searched and fake.searched[0][1] == "CHUNKS"
+    # prefetch uses recall with the configured fast search type
+    assert fake.recalled and fake.recalled[0][1] == "CHUNKS"
     # prefetch is scoped to the agent's own node_set (no cross-tenant noise)
-    assert fake.searched[0][4] == ["hermes_agent"]
+    assert fake.recalled[0][4] == ["hermes_agent"]
+    # and to the current session, so same-session remembers surface promptly
+    assert fake.recalled[0][5] == "sess-1"
     # cache is consumed (one-shot)
     assert provider.prefetch("background", session_id="sess-1") == ""
 
@@ -171,14 +181,17 @@ def test_tool_schemas_expose_three_tools():
     assert names == {"cognee_remember", "cognee_recall", "cognee_forget"}
 
 
-def test_remember_tool_adds_and_flushes_immediately():
+def test_remember_tool_uses_remember_endpoint_with_session():
     provider, fake = make_provider(add_buffer_size=99)
     out = json.loads(provider.handle_tool_call("cognee_remember", {"content": "I prefer dark mode"}))
     assert out["ok"] is True
-    assert fake.added and any("dark mode" in r for r in fake.added[0])
-    # cognify-on-remember: the fact is cognified into the graph promptly (background)
+    texts, session_id = fake.remembered[0]
+    assert any("dark mode" in t for t in texts)
+    # session-attributed so the fact is recallable before the graph build finishes
+    assert session_id == "sess-1"
+    # server-side add+cognify — no client-side cognify hack anymore
     _join(provider)
-    assert fake.cognified >= 1
+    assert fake.cognified == 0
 
 
 def test_recall_tool_uses_tool_search_type():
@@ -196,7 +209,7 @@ def test_forget_requires_confirm():
     provider, fake = make_provider()
     out = json.loads(provider.handle_tool_call("cognee_forget", {"confirm": False}))
     assert "error" in out
-    assert fake.deleted == []
+    assert fake.forgotten == []
 
 
 def test_forget_requires_explicit_dataset_name():
@@ -204,7 +217,7 @@ def test_forget_requires_explicit_dataset_name():
     provider, fake = make_provider()
     out = json.loads(provider.handle_tool_call("cognee_forget", {"confirm": True}))
     assert "error" in out
-    assert fake.deleted == []
+    assert fake.forgotten == []
 
 
 def test_forget_with_confirm_and_dataset_deletes():
@@ -213,7 +226,18 @@ def test_forget_with_confirm_and_dataset_deletes():
         provider.handle_tool_call("cognee_forget", {"confirm": True, "dataset": "main_dataset"})
     )
     assert out["ok"] is True
-    assert fake.deleted == ["main_dataset"]
+    assert fake.forgotten == [("main_dataset", False)]
+
+
+def test_forget_memory_only_preserves_raw_data():
+    provider, fake = make_provider()
+    out = json.loads(
+        provider.handle_tool_call(
+            "cognee_forget", {"confirm": True, "dataset": "main_dataset", "memory_only": True}
+        )
+    )
+    assert out["ok"] is True and out["memory_only"] is True
+    assert fake.forgotten == [("main_dataset", True)]
 
 
 def test_flush_requeues_buffer_on_add_failure():
@@ -243,10 +267,10 @@ def test_unknown_tool_returns_error():
 def test_remember_tool_degrades_on_client_error():
     provider, fake = make_provider(add_buffer_size=99)
 
-    def boom(texts):
+    def boom(texts, *, session_id=None):
         raise RuntimeError("server down")
 
-    fake.add = boom
+    fake.remember = boom
     out = json.loads(provider.handle_tool_call("cognee_remember", {"content": "x meaningful"}))
     assert "error" in out  # error surfaced to model, no exception raised
 
