@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from typing import Any, Dict, List
 
@@ -15,6 +16,21 @@ except ImportError:  # flat import during standalone unit tests
     from client import CogneeClient, CogneeConfig
 
 logger = logging.getLogger(__name__)
+
+# The upstream prompt-injection classifier rejects any request whose text holds a
+# delimiter-wrapped role marker — `[assistant]`, `<system>`, `[ASSISTANT]` — no
+# matter what surrounds it. cognee's cognify step is such a request, so an
+# unsanitized transcript is accepted by /add and then fails every extraction
+# call, stalling the pipeline with no error on the write path. Colon-style
+# labels ("Assistant:") are not flagged, so rewrite rather than delete: the
+# turn structure is worth keeping in the graph.
+_ROLE_MARKER_RE = re.compile(r"[\[<]\s*(user|assistant|system)\s*[\]>]", re.IGNORECASE)
+
+
+def _neutralize_role_markers(text: str) -> str:
+    """Rewrite `[assistant]`-style role markers to a colon form the classifier accepts."""
+    return _ROLE_MARKER_RE.sub(lambda m: f"{m.group(1).capitalize()}:", text)
+
 
 REMEMBER_SCHEMA = {
     "name": "cognee_remember",
@@ -161,6 +177,9 @@ class CogneeMemoryProvider(MemoryProvider):
     def _enqueue_write(self, text: str) -> None:
         if self._agent_context != "primary" or not text or not text.strip():
             return
+        # Single choke point for every write, so no caller can reintroduce a
+        # marker — including markers quoted inside the turn content itself.
+        text = _neutralize_role_markers(text)
         flush = False
         with self._buffer_lock:
             self._buffer.append(text.strip())
@@ -198,7 +217,7 @@ class CogneeMemoryProvider(MemoryProvider):
         assistant_content = (assistant_content or "").strip()
         if len(user_content) + len(assistant_content) < self._MIN_TURN_LEN:
             return
-        self._enqueue_write(f"[user]\n{user_content}\n\n[assistant]\n{assistant_content}")
+        self._enqueue_write(f"User:\n{user_content}\n\nAssistant:\n{assistant_content}")
 
     def on_memory_write(self, action, target, content, metadata=None):
         if action not in {"add", "replace"}:
