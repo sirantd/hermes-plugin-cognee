@@ -90,6 +90,37 @@ def test_sync_turn_buffers_and_flushes_at_threshold():
     assert any("general kenobi" in r for r in fake.added[0])
 
 
+def test_sync_turn_uses_colon_labels_not_bracket_role_markers():
+    # Bracketed role markers trip the upstream prompt-injection classifier, which
+    # fails cognify for every such document while /add still reports success.
+    provider, fake = make_provider(add_buffer_size=1)
+    provider.sync_turn("a meaningful user message", "a meaningful assistant reply")
+    _join(provider)
+    record = fake.added[0][0]
+    assert "[assistant]" not in record and "[user]" not in record
+    assert "User:" in record and "Assistant:" in record
+
+
+def test_role_markers_quoted_inside_turn_content_are_neutralized():
+    # Colon-style framing is not enough on its own: a marker anywhere in the
+    # payload blocks the request, including one quoted by the user.
+    provider, fake = make_provider(add_buffer_size=1)
+    provider.sync_turn("why does [assistant] appear here", "because <SYSTEM> was quoted")
+    _join(provider)
+    record = fake.added[0][0]
+    assert "[assistant]" not in record and "<SYSTEM>" not in record
+    assert "Assistant:" in record and "System:" in record
+
+
+def test_memory_write_content_is_sanitized():
+    provider, fake = make_provider(add_buffer_size=1)
+    provider.on_memory_write("add", "prefs", "he pasted [assistant] into the log")
+    _join(provider)
+    record = fake.added[0][0]
+    assert "[assistant]" not in record
+    assert "[memory:prefs]" in record  # non-role bracket tags are left alone
+
+
 def test_on_memory_write_mirrors_into_buffer():
     provider, fake = make_provider(add_buffer_size=1)
     provider.on_memory_write("add", "user", "lives in Brisbane")
