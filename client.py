@@ -20,8 +20,6 @@ class CogneeConfig:
     auth_token: str = ""
     prefetch_search_type: str = "CHUNKS"
     tool_search_type: str = "GRAPH_COMPLETION"
-    cognify_every_n_turns: int = 10
-    add_buffer_size: int = 5
     request_timeout: float = 30.0
     # Server-side cognify concurrency cap. cognee defaults to 20 parallel
     # documents, which swamps the rate-limited local LLM backend; the homelab

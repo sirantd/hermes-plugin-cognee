@@ -10,6 +10,9 @@ def test_plugin_manifest_valid():
     assert "httpx" in " ".join(manifest["pip_dependencies"])
     assert "on_session_end" in manifest["hooks"]
     assert "on_memory_write" in manifest["hooks"]
+    # The periodic cognify tick died with the retarget — nothing this provider
+    # writes on a turn reaches cognee any more.
+    assert "on_turn_start" not in manifest["hooks"]
 
 
 from client import CogneeConfig
@@ -22,8 +25,6 @@ def test_config_defaults():
     assert cfg.node_set == "hermes_agent"
     assert cfg.prefetch_search_type == "CHUNKS"
     assert cfg.tool_search_type == "GRAPH_COMPLETION"
-    assert cfg.cognify_every_n_turns == 10
-    assert cfg.add_buffer_size == 5
     assert cfg.request_timeout == 30.0
     assert cfg.cognify_data_per_batch == 2
     assert cfg.auth_token == ""
@@ -31,12 +32,22 @@ def test_config_defaults():
 
 def test_config_from_mapping_overrides_defaults():
     cfg = CogneeConfig.from_mapping(
-        {"base_url": "http://x:9000", "dataset": "d", "cognify_every_n_turns": 3}
+        {"base_url": "http://x:9000", "dataset": "d", "tool_search_type": "CHUNKS"}
     )
     assert cfg.base_url == "http://x:9000"
     assert cfg.dataset == "d"
-    assert cfg.cognify_every_n_turns == 3
+    assert cfg.tool_search_type == "CHUNKS"
     assert cfg.node_set == "hermes_agent"  # untouched default
+
+
+def test_working_tier_keys_do_not_leak_into_the_archive_config():
+    # Both tiers share one Hermes config block; the `graphiti_` prefix is what
+    # keeps `base_url` and `graphiti_base_url` from colliding.
+    cfg = CogneeConfig.from_mapping(
+        {"base_url": "http://cognee:8000", "graphiti_base_url": "http://graphiti:8001"}
+    )
+    assert cfg.base_url == "http://cognee:8000"
+    assert not hasattr(cfg, "graphiti_base_url")
 
 
 import httpx
