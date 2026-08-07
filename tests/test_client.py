@@ -10,6 +10,9 @@ def test_plugin_manifest_valid():
     assert "httpx" in " ".join(manifest["pip_dependencies"])
     assert "on_session_end" in manifest["hooks"]
     assert "on_memory_write" in manifest["hooks"]
+    # The periodic cognify tick died with the retarget — nothing this provider
+    # writes on a turn reaches cognee any more.
+    assert "on_turn_start" not in manifest["hooks"]
 
 
 from client import CogneeConfig
@@ -22,21 +25,28 @@ def test_config_defaults():
     assert cfg.node_set == "hermes_agent"
     assert cfg.prefetch_search_type == "CHUNKS"
     assert cfg.tool_search_type == "GRAPH_COMPLETION"
-    assert cfg.cognify_every_n_turns == 10
-    assert cfg.add_buffer_size == 5
     assert cfg.request_timeout == 30.0
-    assert cfg.cognify_data_per_batch == 2
     assert cfg.auth_token == ""
 
 
 def test_config_from_mapping_overrides_defaults():
     cfg = CogneeConfig.from_mapping(
-        {"base_url": "http://x:9000", "dataset": "d", "cognify_every_n_turns": 3}
+        {"base_url": "http://x:9000", "dataset": "d", "tool_search_type": "CHUNKS"}
     )
     assert cfg.base_url == "http://x:9000"
     assert cfg.dataset == "d"
-    assert cfg.cognify_every_n_turns == 3
+    assert cfg.tool_search_type == "CHUNKS"
     assert cfg.node_set == "hermes_agent"  # untouched default
+
+
+def test_working_tier_keys_do_not_leak_into_the_archive_config():
+    # Both tiers share one Hermes config block; the `graphiti_` prefix is what
+    # keeps `base_url` and `graphiti_base_url` from colliding.
+    cfg = CogneeConfig.from_mapping(
+        {"base_url": "http://cognee:8000", "graphiti_base_url": "http://graphiti:8001"}
+    )
+    assert cfg.base_url == "http://cognee:8000"
+    assert not hasattr(cfg, "graphiti_base_url")
 
 
 import httpx
@@ -47,34 +57,6 @@ def _client(handler):
     transport = httpx.MockTransport(handler)
     cfg = CogneeConfig(base_url="http://test")
     return CogneeClient(cfg, transport=transport)
-
-
-def test_add_posts_multipart_with_dataset_and_node_set():
-    seen = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["content_type"] = request.headers.get("content-type", "")
-        seen["body"] = request.content
-        return httpx.Response(200, json={"status": "ok"})
-
-    client = _client(handler)
-    client.add(["fact one", "fact two"])
-
-    assert seen["url"] == "http://test/api/v1/add"
-    assert "multipart/form-data" in seen["content_type"]
-    body = seen["body"]
-    assert b"main_dataset" in body          # datasetName field
-    assert b'name="node_set"' in body
-    assert b"hermes_agent" in body
-    assert b"fact one" in body and b"fact two" in body
-
-
-def test_add_empty_list_is_noop():
-    def handler(request):
-        raise AssertionError("should not call server for empty add")
-
-    _client(handler).add([])  # no exception, no request
 
 
 import json
@@ -108,24 +90,6 @@ def test_search_wraps_non_list_response_in_list():
 
     out = _client(handler).search("q", search_type="CHUNKS")
     assert out == [{"answer": "42"}]
-
-
-def test_cognify_posts_camelcase_background_json():
-    seen = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["url"] = str(request.url)
-        seen["payload"] = json.loads(request.content)
-        return httpx.Response(200, json={"status": "started"})
-
-    _client(handler).cognify()
-
-    assert seen["url"] == "http://test/api/v1/cognify"
-    assert seen["payload"] == {
-        "datasets": ["main_dataset"],
-        "runInBackground": True,
-        "dataPerBatch": 2,
-    }
 
 
 def test_remember_posts_multipart_with_session_and_background():
@@ -236,7 +200,7 @@ def test_forget_defaults_to_full_deletion():
     assert seen["payload"] == {"dataset": "main_dataset", "memoryOnly": False}
 
 
-def test_add_sends_auth_header_when_token_set():
+def test_requests_send_auth_header_when_token_set():
     seen = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -245,5 +209,5 @@ def test_add_sends_auth_header_when_token_set():
 
     transport = httpx.MockTransport(handler)
     cfg = CogneeConfig(base_url="http://test", auth_token="tok123")
-    CogneeClient(cfg, transport=transport).add(["x"])
+    CogneeClient(cfg, transport=transport).remember(["x"])
     assert seen["auth"] == "Bearer tok123"

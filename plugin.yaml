@@ -1,9 +1,8 @@
 name: cognee
-version: 0.3.0
-description: "cognee — shared knowledge-graph long-term memory (remote cognee server) for Hermes."
+version: 0.4.0
+description: "Two-tier long-term memory for Hermes — Graphiti working tier (episodes) + remote cognee archive."
 pip_dependencies:
   - "httpx>=0.27"
 hooks:
   - on_session_end
   - on_memory_write
-  - on_turn_start
