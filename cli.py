@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, NamedTuple
+
 
 def register_cli(subparser) -> None:
     """Build the ``hermes cognee`` subcommand tree.
@@ -25,7 +27,20 @@ def _dispatch(args) -> None:
         print("usage: hermes cognee {status,recall}")
 
 
-def _build_clients():
+class _Tiers(NamedTuple):
+    # Untyped: the clients are imported lazily so this module stays importable
+    # both as a package and flat.
+    working: Any          # GraphitiClient
+    archive: Any          # CogneeClient
+    archive_config: Any   # CogneeConfig
+    group_id: str
+
+    def close(self) -> None:
+        self.working.close()
+        self.archive.close()
+
+
+def _build_tiers() -> _Tiers:
     """Both tiers, constructed independently so one being down never hides the other."""
     try:
         from .client import CogneeClient, CogneeConfig
@@ -33,58 +48,63 @@ def _build_clients():
     except ImportError:
         from client import CogneeClient, CogneeConfig
         from graphiti_client import GraphitiClient, GraphitiConfig
-    cognee_cfg = CogneeConfig.from_hermes_config()
-    graphiti_cfg = GraphitiConfig.from_hermes_config()
-    group_id = graphiti_cfg.resolve_group_id(cognee_cfg.node_set)
-    return (
-        CogneeClient(cognee_cfg),
-        cognee_cfg,
-        GraphitiClient(graphiti_cfg),
-        graphiti_cfg,
-        group_id,
+    archive_config = CogneeConfig.from_hermes_config()
+    working_config = GraphitiConfig.from_hermes_config()
+    return _Tiers(
+        working=GraphitiClient(working_config),
+        archive=CogneeClient(archive_config),
+        archive_config=archive_config,
+        group_id=working_config.resolve_group_id(archive_config.node_set),
     )
 
 
-def _cmd_status(args=None) -> None:
-    cognee, cognee_cfg, graphiti, graphiti_cfg, group_id = _build_clients()
+def _report(label: str, describe) -> None:
+    """Print one tier's line, turning an outage into a message rather than a traceback."""
     try:
-        try:
-            status = graphiti.status()
-            print(
-                f"graphiti OK @ {graphiti_cfg.base_url} — group_id={group_id} "
-                f"({status.get('message', status.get('status', 'ok'))})"
+        print(f"{label} OK — {describe()}")
+    except Exception as exc:
+        print(f"{label} UNREACHABLE: {exc}")
+
+
+def _cmd_status(args=None) -> None:
+    tiers = _build_tiers()
+    try:
+        def working():
+            status = tiers.working.status()
+            # Episode count is the cheapest answer to "is the write path
+            # actually landing?", which is the thing most worth knowing here.
+            episodes = tiers.working.get_episodes(max_episodes=5, group_ids=[tiers.group_id])
+            detail = status.get("message") or status.get("status", "ok")
+            return f"group_id={tiers.group_id} ({detail}; {len(episodes)} recent episodes)"
+
+        def archive():
+            datasets = tiers.archive.list_datasets()
+            return (
+                f"dataset={tiers.archive_config.dataset} "
+                f"node_set={tiers.archive_config.node_set} "
+                f"({len(datasets)} datasets visible)"
             )
-        except Exception as exc:
-            print(f"graphiti UNREACHABLE @ {graphiti_cfg.base_url}: {exc}")
-        try:
-            datasets = cognee.list_datasets()
-            print(
-                f"cognee OK @ {cognee_cfg.base_url} — dataset={cognee_cfg.dataset} "
-                f"node_set={cognee_cfg.node_set} ({len(datasets)} datasets visible)"
-            )
-        except Exception as exc:
-            print(f"cognee UNREACHABLE @ {cognee_cfg.base_url}: {exc}")
+
+        _report(f"working @ {tiers.working.config.base_url}", working)
+        _report(f"archive @ {tiers.archive_config.base_url}", archive)
     finally:
-        cognee.close()
-        graphiti.close()
+        tiers.close()
 
 
 def _cmd_recall(args) -> None:
-    cognee, cognee_cfg, graphiti, _graphiti_cfg, group_id = _build_clients()
+    tiers = _build_tiers()
     try:
-        print(f"# working tier (graphiti, group_id={group_id})")
-        try:
-            facts = graphiti.search_facts(args.query, max_facts=10, group_ids=[group_id])
-            for fact in facts:
-                print("-", fact.get("fact", fact))
-        except Exception as exc:
-            print(f"  recall failed: {exc}")
-        print(f"# archive tier (cognee, dataset={cognee_cfg.dataset})")
-        try:
-            for result in cognee.search(args.query, search_type=cognee_cfg.tool_search_type, top_k=10):
-                print("-", result)
-        except Exception as exc:
-            print(f"  recall failed: {exc}")
+        def working():
+            facts = tiers.working.search_facts(args.query, max_facts=10, group_ids=[tiers.group_id])
+            return "\n".join(f"  - {f.get('fact', f)}" for f in facts) or "  (nothing)"
+
+        def archive():
+            results = tiers.archive.search(
+                args.query, search_type=tiers.archive_config.tool_search_type, top_k=10
+            )
+            return "\n".join(f"  - {r}" for r in results) or "  (nothing)"
+
+        _report(f"working (group_id={tiers.group_id})\n", working)
+        _report(f"archive (dataset={tiers.archive_config.dataset})\n", archive)
     finally:
-        cognee.close()
-        graphiti.close()
+        tiers.close()

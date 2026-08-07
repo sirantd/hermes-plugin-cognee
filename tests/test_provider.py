@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 pytest.importorskip("agent.memory_provider")  # needs a hermes-agent checkout on sys.path
@@ -12,7 +13,7 @@ from provider import (  # noqa: E402
     TURN_SOURCE,
     CogneeMemoryProvider,
 )
-from client import CogneeConfig  # noqa: E402
+from client import CogneeClient, CogneeConfig  # noqa: E402
 from graphiti_client import GraphitiConfig  # noqa: E402
 
 
@@ -21,22 +22,14 @@ class FakeClient:
 
     def __init__(self, config):
         self.config = config
-        self.added = []
         self.remembered = []
-        self.cognified = 0
         self.searched = []
         self.recalled = []
         self.forgotten = []
         self.search_return = [{"text": "recalled context"}]
 
-    def add(self, texts):
-        self.added.append(list(texts))
-
     def remember(self, texts, *, session_id=None):
         self.remembered.append((list(texts), session_id))
-
-    def cognify(self):
-        self.cognified += 1
 
     def search(self, query, *, search_type, top_k=10, only_context=False, node_name=None):
         self.searched.append((query, search_type, top_k, only_context, node_name))
@@ -127,14 +120,40 @@ def test_system_prompt_mentions_tools_and_does_not_disable_builtin():
 # -- turn capture → Graphiti episodes ---------------------------------------
 
 
-def test_sync_turn_writes_a_graphiti_episode_and_never_touches_cognee():
-    provider, fake, graphiti = make_provider()
+def test_sync_turn_writes_a_graphiti_episode():
+    provider, _, graphiti = make_provider()
     provider.sync_turn("hello there friend", "general kenobi", session_id="sess-1")
     _join(provider)
     assert len(graphiti.episodes) == 1
     assert "general kenobi" in graphiti.episodes[0]["body"]
-    # The acceptance criterion, asserted directly.
-    assert fake.added == [] and fake.cognified == 0
+
+
+def test_no_turn_reaches_the_cognee_server_at_all():
+    """The acceptance criterion, asserted at the wire rather than on a double.
+
+    A real ``CogneeClient`` on a transport that refuses every request: whatever
+    the provider does on a turn, nothing may reach cognee's HTTP surface.
+    """
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"a turn reached cognee: {request.method} {request.url}")
+
+    cfg = CogneeConfig(base_url="http://cognee")
+    gcfg = GraphitiConfig()
+    graphiti = FakeGraphiti(gcfg)
+    provider = CogneeMemoryProvider(
+        config=cfg,
+        client=CogneeClient(cfg, transport=httpx.MockTransport(refuse)),
+        graphiti_config=gcfg,
+        graphiti_client=graphiti,
+    )
+    provider.initialize("sess-1", agent_context="primary", hermes_home="/tmp/h")
+
+    provider.sync_turn("a meaningful user message", "a meaningful assistant reply")
+    provider.on_memory_write("add", "prefs", "prefers dark mode always")
+    provider.on_session_end([{"role": "user", "content": "x"}])
+    _join(provider)
+
+    assert len(graphiti.episodes) == 2  # both writes landed in the working tier
 
 
 def test_turn_episode_is_tagged_as_a_session_turn_not_pinned():
@@ -261,12 +280,12 @@ def test_remove_action_is_not_written():
 
 
 def test_writes_skipped_for_non_primary_context():
-    provider, fake, graphiti = make_provider()
+    provider, _, graphiti = make_provider()
     provider._agent_context = "cron"
     provider.sync_turn("u long enough content", "a long enough content", session_id="s")
     provider.on_memory_write("add", "memory", "should not persist")
     _join(provider)
-    assert graphiti.episodes == [] and fake.added == []
+    assert graphiti.episodes == []
 
 
 # -- the write queue ---------------------------------------------------------
@@ -337,13 +356,12 @@ def test_buffer_is_bounded_during_a_sustained_outage():
 
 
 def test_session_end_flushes_the_queue():
-    provider, fake, graphiti = make_provider(graphiti_over={"episode_buffer_size": 10})
+    provider, _, graphiti = make_provider(graphiti_over={"episode_buffer_size": 10})
     provider.sync_turn("a meaningful user message", "a meaningful assistant reply")
     assert graphiti.episodes == []  # buffered, below threshold
     provider.on_session_end([{"role": "user", "content": "x"}])
     _join(provider)
     assert len(graphiti.episodes) == 1
-    assert fake.cognified == 0  # no periodic cognify survives the retarget
 
 
 def test_session_end_skipped_for_non_primary():
@@ -499,8 +517,8 @@ def test_queue_prefetch_noop_before_initialize():
     assert provider.prefetch("q", session_id="s") == ""
 
 
-def test_session_switch_resets_session_cache_and_turn_sequence():
-    provider, fake, graphiti = make_provider()
+def test_session_switch_clears_the_prefetch_cache_but_not_the_turn_sequence():
+    provider, _, graphiti = make_provider()
     graphiti.facts_return = [{"fact": "ctx"}]
     provider.queue_prefetch("q", session_id="sess-1")
     _join(provider)
@@ -511,7 +529,9 @@ def test_session_switch_resets_session_cache_and_turn_sequence():
     assert provider.prefetch("q", session_id="sess-1") == ""  # cache cleared
     provider.sync_turn("a fresh meaningful message", "a fresh meaningful reply")
     _join(provider)
-    assert graphiti.episodes[-1]["name"] == "hermes turn 1"  # sequence restarted
+    # The sequence only names episodes; restarting it would collide with turns
+    # still queued from before the switch.
+    assert graphiti.episodes[-1]["name"] == "hermes turn 2"
 
 
 # -- tools -------------------------------------------------------------------

@@ -42,6 +42,11 @@ tiers' `base_url`s don't collide.
 | `graphiti_group_id` | *(derived from `node_set`)* |
 | `graphiti_episode_buffer_size` | `1` |
 
+⚠️ `cognify_every_n_turns` and `add_buffer_size` are **gone** — nothing written on a
+turn reaches cognee any more, so the periodic cognify tick and the document-add batch
+both went with it. A stale `config.yaml` still loads; the keys are ignored.
+`graphiti_episode_buffer_size` is the write-queue depth now.
+
 **Partitioning.** cognee's `node_set` maps onto Graphiti's `group_id`
 (`hermes_agent` → `hermes`; `homelab`/`paperclip`/`meta` unchanged). The mapping is
 physical — one FalkorDB graph per group — so a wrong `group_id` is a *different graph*,

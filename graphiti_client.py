@@ -58,9 +58,11 @@ class GraphitiConfig:
     # Empty means "derive from the cognee node_set" — see ``resolve_group_id``.
     group_id: str = ""
     request_timeout: float = 30.0
-    # Episodes are written one MCP call each, so batching buys nothing and only
-    # delays the write; a turn's facts should be extractable as soon as
-    # possible. The queue itself still matters — see ``_flush`` in provider.py.
+    # How many episodes to accumulate before a flush. Defaults to 1 — an
+    # episode is one MCP call regardless, so holding turns back only delays
+    # when their facts become recallable. Raise it only to trade freshness for
+    # fewer background threads. (The queue itself matters either way — see
+    # ``_flush`` in provider.py.)
     episode_buffer_size: int = 1
 
     _CONFIG_PREFIX = "graphiti_"
@@ -229,7 +231,10 @@ class GraphitiClient:
                     "params": {
                         "protocolVersion": MCP_PROTOCOL_VERSION,
                         "capabilities": {},
-                        "clientInfo": {"name": "hermes-plugin-cognee", "version": "0.4.0"},
+                        # Identifies this MCP client implementation to the
+                        # server; deliberately not the plugin version, which
+                        # would drift from plugin.yaml unnoticed.
+                        "clientInfo": {"name": "hermes-plugin-cognee", "version": "1"},
                     },
                 }
             )

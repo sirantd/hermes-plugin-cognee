@@ -53,9 +53,11 @@ def _neutralize_role_markers(text: str) -> str:
 PINNED_SOURCE = "hermes:pinned-memory"
 TURN_SOURCE = "hermes:session-turn"
 
-# Provenance labels for merged recall results.
+# Provenance labels for merged recall results — also the response keys, so the
+# label a `degraded` entry carries names the field that came back empty.
 _WORKING = "working"
 _ARCHIVE = "archive"
+_TIERS = (_WORKING, _ARCHIVE)
 
 
 def _utc_now_iso() -> str:
@@ -252,12 +254,17 @@ class CogneeMemoryProvider(MemoryProvider):
     def _enqueue_write(self, text: str, *, name: str, source_description: str, source: str) -> None:
         """The single choke point for every working-tier write.
 
-        The sanitizer sits here rather than in the formatters because a marker
-        quoted inside turn *content* is enough to trip the classifier on the
-        archive path, and one choke point means no caller can reintroduce one.
-        Rewriting markers is mildly lossy, but the episode body is otherwise
-        stored verbatim — Graphiti keeps it on the Episodic node and extraction
-        is additive.
+        The sanitizer runs here, one call site, rather than in the two
+        formatters: a marker quoted inside turn *content* trips the classifier
+        just as a formatter-emitted one would, so per-formatter handling was
+        never sufficient. The working tier's LLM is local and blocks nothing,
+        so this is defence in depth — kept because the choke point is what
+        stops a future caller reintroducing the problem, not because this path
+        needs it today.
+
+        Rewriting a marker does mean the body is not byte-identical to what the
+        user typed. Everything else is stored verbatim: Graphiti keeps the body
+        on the Episodic node and extraction adds to it rather than replacing it.
         """
         if self._agent_context != "primary" or not text or not text.strip():
             return
@@ -356,22 +363,19 @@ class CogneeMemoryProvider(MemoryProvider):
         self._spawn(self._flush)
 
     @staticmethod
-    def _format_recall(results: List[Any]) -> str:
+    def _format_results(results: List[Any], *keys: str) -> str:
+        """Bullet-list results for the prompt, reading the first key each item has.
+
+        The two tiers name their payload differently — Graphiti facts carry
+        ``fact``, cognee items ``text``/``content``/``answer`` — so the caller
+        passes the keys to try, in order.
+        """
         lines = []
         for item in results[:10]:
             if isinstance(item, dict):
-                text = item.get("text") or item.get("content") or item.get("answer") or json.dumps(item)
+                text = next((item[k] for k in keys if item.get(k)), None) or json.dumps(item)
             else:
                 text = str(item)
-            if text:
-                lines.append(f"- {text}")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _format_facts(facts: List[Any]) -> str:
-        lines = []
-        for item in facts[:10]:
-            text = item.get("fact") if isinstance(item, dict) else str(item)
             if text:
                 lines.append(f"- {text}")
         return "\n".join(lines)
@@ -388,7 +392,7 @@ class CogneeMemoryProvider(MemoryProvider):
                 facts = self._graphiti.search_facts(
                     query, max_facts=5, group_ids=[self._group_id]
                 )
-                formatted = self._format_facts(facts)
+                formatted = self._format_results(facts, "fact")
                 if formatted:
                     blocks.append(f"<working-memory>\n{formatted}\n</working-memory>")
             except Exception as exc:
@@ -405,7 +409,7 @@ class CogneeMemoryProvider(MemoryProvider):
                     node_name=[self._config.node_set] if self._config.node_set else None,
                     session_id=sid or None,
                 )
-                formatted = self._format_recall(results)
+                formatted = self._format_results(results, "text", "content", "answer")
                 if formatted:
                     blocks.append(f"<cognee-memory>\n{formatted}\n</cognee-memory>")
             except Exception as exc:
@@ -427,29 +431,33 @@ class CogneeMemoryProvider(MemoryProvider):
         if reset or rewound:
             with self._prefetch_lock:
                 self._prefetch_cache.clear()
-            with self._buffer_lock:
-                self._turn_seq = 0
+        # `_turn_seq` deliberately survives a reset: it only names episodes, and
+        # restarting it would collide with turns still sitting in the queue.
 
     def _recall_both_tiers(self, query: str, *, search_type: str, top_k: int) -> Dict[str, Any]:
-        """Query both tiers independently so either can fail alone."""
+        """Query both tiers independently so either can fail alone.
+
+        Returns one list per tier rather than one interleaved ranking: RRF
+        scores and cognee similarity are not comparable, so any single ordering
+        would be invented.
+        """
+        found: Dict[str, Any] = {tier: [] for tier in _TIERS}
         degraded = []
-        working: List[Any] = []
-        archive: List[Any] = []
         try:
-            working = self._graphiti.search_facts(
+            found[_WORKING] = self._graphiti.search_facts(
                 query, max_facts=top_k, group_ids=[self._group_id]
             )
         except Exception as exc:
             degraded.append(_WORKING)
             logger.warning("graphiti recall failed, degrading to archive only: %s", exc)
         try:
-            archive = self._client.search(
+            found[_ARCHIVE] = self._client.search(
                 query, search_type=search_type, top_k=top_k, only_context=False
             )
         except Exception as exc:
             degraded.append(_ARCHIVE)
             logger.warning("cognee recall failed: %s", exc)
-        return {"working": working, "archive": archive, "degraded": degraded}
+        return {**found, "degraded": degraded}
 
     def handle_tool_call(self, tool_name, args, **kwargs) -> str:
         try:
@@ -474,7 +482,7 @@ class CogneeMemoryProvider(MemoryProvider):
                     top_k=int(args.get("top_k") or 10),
                 )
                 degraded = found.pop("degraded")
-                if len(degraded) == 2:
+                if len(degraded) == len(_TIERS):
                     return _err("both memory tiers are unreachable")
                 out = {"ok": True, **found}
                 if degraded:

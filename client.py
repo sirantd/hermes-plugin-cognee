@@ -21,10 +21,6 @@ class CogneeConfig:
     prefetch_search_type: str = "CHUNKS"
     tool_search_type: str = "GRAPH_COMPLETION"
     request_timeout: float = 30.0
-    # Server-side cognify concurrency cap. cognee defaults to 20 parallel
-    # documents, which swamps the rate-limited local LLM backend; the homelab
-    # ingest pipeline uses the same cap.
-    cognify_data_per_batch: int = 2
 
     @classmethod
     def from_mapping(cls, data: Optional[Dict[str, Any]]) -> "CogneeConfig":
@@ -77,29 +73,16 @@ class CogneeClient:
     def close(self) -> None:
         self._http.close()
 
-    def add(self, texts: List[str]) -> None:
-        texts = [t for t in texts if t and t.strip()]
-        if not texts:
-            return
-        files = [
-            ("data", (f"memory_{i}.md", io.BytesIO(t.encode("utf-8")), "text/markdown"))
-            for i, t in enumerate(texts)
-        ]
-        data = {
-            "datasetName": self._config.dataset,
-            "node_set": self._config.node_set,
-            "run_in_background": "false",  # multipart form value is a string, not a JSON bool
-        }
-        resp = self._http.post("/api/v1/add", data=data, files=files)
-        resp.raise_for_status()
-
     def remember(self, texts: List[str], *, session_id: Optional[str] = None) -> None:
         """Ingest and build the graph in a single server-side call (``/api/v1/remember``).
 
-        Replaces the client-side add + cognify pair for explicit facts. With a
-        ``session_id`` the fact also lands in the server's session cache, so a
-        session-scoped ``recall`` can see it before the background graph build
-        finishes.
+        The only write this client makes. Session turns go to the working tier
+        now, so the client-side ``/api/v1/add`` + ``/api/v1/cognify`` pair this
+        replaced has no remaining caller and is gone.
+
+        With a ``session_id`` the fact also lands in the server's session cache,
+        so a session-scoped ``recall`` can see it before the background graph
+        build finishes.
         """
         texts = [t for t in texts if t and t.strip()]
         if not texts:
@@ -185,15 +168,6 @@ class CogneeClient:
         """
         payload = {"dataset": dataset, "memoryOnly": memory_only}
         resp = self._http.post("/api/v1/forget", json=payload)
-        resp.raise_for_status()
-
-    def cognify(self) -> None:
-        payload = {
-            "datasets": [self._config.dataset],
-            "runInBackground": True,
-            "dataPerBatch": self._config.cognify_data_per_batch,
-        }
-        resp = self._http.post("/api/v1/cognify", json=payload)
         resp.raise_for_status()
 
     def list_datasets(self) -> List[Dict[str, Any]]:
