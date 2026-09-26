@@ -33,12 +33,12 @@ tiers' `base_url`s don't collide.
 
 | key | default |
 |---|---|
-| `base_url` | `http://truenas.local:8000` |
+| `base_url` | `http://truenas.lan:8000` |
 | `dataset` | `main_dataset` |
 | `node_set` | `hermes_agent` |
 | `prefetch_search_type` | `CHUNKS` |
 | `tool_search_type` | `GRAPH_COMPLETION` |
-| `graphiti_base_url` | `http://truenas.local:8001` |
+| `graphiti_base_url` | `http://truenas.lan:8001` |
 | `graphiti_group_id` | *(derived from `node_set`)* |
 | `graphiti_episode_buffer_size` | `1` |
 

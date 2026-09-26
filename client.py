@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CogneeConfig:
-    base_url: str = "http://truenas.local:8000"
+    base_url: str = "http://truenas.lan:8000"
     dataset: str = "main_dataset"
     node_set: str = "hermes_agent"
     auth_token: str = ""
