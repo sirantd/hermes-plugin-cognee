@@ -20,7 +20,7 @@ from client import CogneeConfig
 
 def test_config_defaults():
     cfg = CogneeConfig()
-    assert cfg.base_url == "http://truenas.local:8000"
+    assert cfg.base_url == "http://truenas.lan:8000"
     assert cfg.dataset == "main_dataset"
     assert cfg.node_set == "hermes_agent"
     assert cfg.prefetch_search_type == "CHUNKS"

@@ -217,13 +217,13 @@ class CogneeMemoryProvider(MemoryProvider):
 
     def get_config_schema(self) -> List[Dict[str, Any]]:
         return [
-            {"key": "base_url", "description": "cognee archive server base URL", "default": "http://truenas.local:8000"},
+            {"key": "base_url", "description": "cognee archive server base URL", "default": "http://truenas.lan:8000"},
             {"key": "dataset", "description": "cognee dataset name", "default": "main_dataset"},
             {"key": "node_set", "description": "node_set partition for this agent", "default": "hermes_agent"},
             {"key": "auth_token", "description": "Optional bearer token", "secret": True, "env_var": "COGNEE_AUTH_TOKEN"},
             {"key": "prefetch_search_type", "description": "SearchType for auto-prefetch", "default": "CHUNKS"},
             {"key": "tool_search_type", "description": "SearchType for cognee_recall", "default": "GRAPH_COMPLETION"},
-            {"key": "graphiti_base_url", "description": "Graphiti MCP server base URL (working tier)", "default": "http://truenas.local:8001"},
+            {"key": "graphiti_base_url", "description": "Graphiti MCP server base URL (working tier)", "default": "http://truenas.lan:8001"},
             {"key": "graphiti_group_id", "description": "Graphiti group_id (default: mapped from node_set)", "default": ""},
             {"key": "graphiti_episode_buffer_size", "description": "Episodes buffered before flush", "default": 1},
         ]

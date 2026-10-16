@@ -54,7 +54,7 @@ class GraphitiError(RuntimeError):
 
 @dataclass
 class GraphitiConfig:
-    base_url: str = "http://truenas.local:8001"
+    base_url: str = "http://truenas.lan:8001"
     # Empty means "derive from the cognee node_set" — see ``resolve_group_id``.
     group_id: str = ""
     request_timeout: float = 30.0

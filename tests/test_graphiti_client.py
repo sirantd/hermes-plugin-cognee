@@ -87,7 +87,7 @@ def _client(handler, **cfg_over) -> GraphitiClient:
 
 def test_config_defaults_point_at_the_deployed_server():
     cfg = GraphitiConfig()
-    assert cfg.base_url == "http://truenas.local:8001"
+    assert cfg.base_url == "http://truenas.lan:8001"
     assert cfg.request_timeout == 30.0
     assert cfg.episode_buffer_size == 1
     assert cfg.group_id == ""  # resolved from node_set unless overridden
